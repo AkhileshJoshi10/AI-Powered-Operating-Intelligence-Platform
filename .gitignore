@@ -1,0 +1,43 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Environment variables
+.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+*.pdf
+*.png
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VS Code settings
+.vscode/
+
+# Logs
+*.log
+
+# Temporary files
+temp/
+tmp/
+
+# Generated reports
+reports/*.pdf
+reports/*.docx

@@ -24,7 +24,7 @@ The main objective of this project is to design and develop an AI-powered platfo
 
 ## Demo Company
 
-The demo company selected for this project is **Deradun Fresh Dairy Pvt. Ltd.**, a fictional FMCG/dairy company based in Dehradun.
+The demo company selected for this project is **SmartMart Retail Pvt. Ltd.**, a fictional retail/FMCG superstore business.
 
 ## MVP Scope
 

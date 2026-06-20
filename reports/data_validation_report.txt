@@ -1,0 +1,19 @@
+DATA VALIDATION REPORT
+==================================================
+
+DATASET SUMMARY
+products_data.csv: 25 rows, 13 columns
+stores_data.csv: 10 rows, 10 columns
+vendors_data.csv: 10 rows, 11 columns
+employees_data.csv: 25 rows, 10 columns
+sales_data.csv: 44435 rows, 16 columns
+inventory_data.csv: 250 rows, 14 columns
+complaints_data.csv: 1572 rows, 15 columns
+finance_data.csv: 60 rows, 13 columns
+vendor_deliveries_data.csv: 85 rows, 18 columns
+
+ERRORS
+No validation errors found.
+
+WARNINGS
+No warnings found.

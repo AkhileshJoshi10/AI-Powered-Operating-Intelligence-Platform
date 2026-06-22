@@ -2,7 +2,7 @@ DATA VALIDATION REPORT
 ==================================================
 
 DATASET SUMMARY
-products_data.csv: 25 rows, 13 columns
+products_data.csv: 25 rows, 12 columns
 stores_data.csv: 10 rows, 10 columns
 vendors_data.csv: 10 rows, 11 columns
 employees_data.csv: 25 rows, 10 columns

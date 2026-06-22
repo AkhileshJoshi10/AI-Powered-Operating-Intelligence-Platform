@@ -1,0 +1,190 @@
+DATA CLEANING REPORT
+============================================================
+
+Special handling:
+- products_data.csv -> is_perishable and shelf_life_days
+- inventory_data.csv -> expiry_date
+- Inventory expiry checks use the product_id relationship.
+- is_perishable is not added to inventory_cleaned.csv.
+
+Rules:
+- Non-perishable products have shelf_life_days as literal NA.
+- Non-perishable inventory has expiry_date as literal NA.
+- Perishable products require valid shelf_life_days.
+- Perishable inventory requires valid expiry_date.
+
+All other columns:
+- NA, N/A, None, Null, Nan, and blank values are treated
+  as missing values and are saved as blanks.
+
+All other date columns:
+- Are mandatory.
+- NA or blank values stop the cleaning process with an error.
+
+Removed from processed output:
+- reorder_trigger_level is removed from inventory_cleaned.csv.
+
+DATASET DETAILS
+============================================================
+
+Dataset: products_data.csv
+Processed file: products_cleaned.csv
+Rows: 25 -> 25
+Columns before cleaning: 12
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: None
+Month columns standardized: None
+Numeric columns standardized: unit_price, cost_price, margin_percent, reorder_level
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 5
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: stores_data.csv
+Processed file: stores_cleaned.csv
+Rows: 10 -> 10
+Columns before cleaning: 10
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: opening_date
+Month columns standardized: None
+Numeric columns standardized: monthly_sales_target
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: vendors_data.csv
+Processed file: vendors_cleaned.csv
+Rows: 10 -> 10
+Columns before cleaning: 11
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: None
+Month columns standardized: None
+Numeric columns standardized: average_delivery_days, rating
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: employees_data.csv
+Processed file: employees_cleaned.csv
+Rows: 25 -> 25
+Columns before cleaning: 10
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: None
+Month columns standardized: None
+Numeric columns standardized: monthly_target
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: sales_data.csv
+Processed file: sales_cleaned.csv
+Rows: 44435 -> 44435
+Columns before cleaning: 16
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: date
+Month columns standardized: None
+Numeric columns standardized: quantity_sold, unit_price, discount_percent, total_sales, total_cost, profit
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: inventory_data.csv
+Processed file: inventory_cleaned.csv
+Rows: 250 -> 250
+Columns before cleaning: 14
+Duplicates removed: 0
+Columns removed: reorder_trigger_level
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: date
+Month columns standardized: None
+Numeric columns standardized: current_stock, reorder_level
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 50
+
+Dataset: complaints_data.csv
+Processed file: complaints_cleaned.csv
+Rows: 1572 -> 1572
+Columns before cleaning: 15
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: date
+Month columns standardized: None
+Numeric columns standardized: resolution_time_days
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: finance_data.csv
+Processed file: finance_cleaned.csv
+Rows: 60 -> 60
+Columns before cleaning: 13
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: None
+Month columns standardized: month
+Numeric columns standardized: monthly_sales_target, total_revenue, total_cost, gross_profit, operating_expense, operating_profit, target_achievement_percent
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0
+
+Dataset: vendor_deliveries_data.csv
+Processed file: vendor_deliveries_cleaned.csv
+Rows: 85 -> 85
+Columns before cleaning: 18
+Duplicates removed: 0
+Columns removed: None
+Text values normalized: 0
+ID values standardized: 0
+Categorical labels standardized: 0
+Generic missing values standardized: 0
+Date columns standardized: order_date, expected_delivery_date, actual_delivery_date
+Month columns standardized: None
+Numeric columns standardized: ordered_quantity, received_quantity, unit_cost, purchase_value, delay_days, quality_rating
+Perishable products with missing shelf life: 0
+Non-perishable shelf life values set to NA: 0
+Perishable inventory rows with missing expiry date: 0
+Non-perishable expiry values set to NA: 0

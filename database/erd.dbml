@@ -1,0 +1,191 @@
+// ==========================================================
+// AI-Powered Operating Intelligence Platform
+// Database ERD Source
+// Database: ai_operating_intelligence
+// ==========================================================
+
+Table vendors {
+  vendor_id varchar(10) [pk]
+  vendor_name varchar(150) [not null]
+  vendor_category varchar(100)
+  contact_person varchar(150)
+  city varchar(100)
+  state varchar(100)
+  region varchar(50)
+  average_delivery_days integer
+  rating numeric(3,1)
+  payment_terms varchar(100)
+  supply_status varchar(50)
+}
+
+Table employees {
+  employee_id varchar(10) [pk]
+  employee_name varchar(150) [not null]
+  role varchar(100)
+  department varchar(100)
+  store_id varchar(10) [note: "May contain ALL for department-level employees. Not a foreign key."]
+  region varchar(50)
+  email varchar(150)
+  monthly_target numeric(14,2)
+  performance_status varchar(50)
+  employment_status varchar(50)
+}
+
+Table stores {
+  store_id varchar(10) [pk]
+  store_name varchar(150) [not null]
+  city varchar(100)
+  state varchar(100)
+  region varchar(50)
+  store_type varchar(100)
+  manager_id varchar(10) [not null]
+  opening_date date [not null]
+  monthly_sales_target numeric(14,2)
+  operational_status varchar(50)
+}
+
+Table products {
+  product_id varchar(10) [pk]
+  product_name varchar(200) [not null]
+  category varchar(100)
+  sub_category varchar(100)
+  brand varchar(100)
+  unit_price numeric(12,2)
+  cost_price numeric(12,2)
+  margin_percent numeric(6,2)
+  reorder_level integer
+  shelf_life_days integer [note: "NULL for non-perishable products"]
+  is_perishable varchar(3) [not null, note: "Yes or No"]
+  vendor_id varchar(10) [not null]
+}
+
+Table sales {
+  sale_id varchar(20) [pk]
+  date date [not null]
+  store_id varchar(10) [not null]
+  store_name varchar(150)
+  region varchar(50)
+  product_id varchar(10) [not null]
+  product_name varchar(200)
+  category varchar(100)
+  employee_id varchar(10)
+  quantity_sold integer [not null]
+  unit_price numeric(12,2) [not null]
+  discount_percent numeric(6,2)
+  total_sales numeric(14,2) [not null]
+  total_cost numeric(14,2) [not null]
+  profit numeric(14,2)
+  payment_status varchar(50)
+}
+
+Table inventory {
+  inventory_id varchar(20) [pk]
+  date date [not null]
+  store_id varchar(10) [not null]
+  store_name varchar(150)
+  product_id varchar(10) [not null]
+  product_name varchar(200)
+  category varchar(100)
+  vendor_id varchar(10) [not null]
+  current_stock integer [not null]
+  reorder_level integer [not null]
+  stock_status varchar(50) [not null]
+  reorder_required varchar(3) [not null]
+  expiry_date date [note: "NULL for non-perishable products"]
+
+  Note: "is_perishable is derived through product_id -> products. days_to_expiry is calculated dynamically as expiry_date - date."
+}
+
+Table complaints {
+  complaint_id varchar(20) [pk]
+  date date [not null]
+  customer_id varchar(20)
+  store_id varchar(10) [not null]
+  store_name varchar(150)
+  region varchar(50)
+  product_id varchar(10) [not null]
+  product_name varchar(200)
+  category varchar(100)
+  complaint_type varchar(150)
+  complaint_description text
+  severity varchar(20) [not null]
+  status varchar(50) [not null]
+  assigned_employee_id varchar(10)
+  resolution_time_days integer
+}
+
+Table finance {
+  finance_id varchar(20) [pk]
+  month varchar(7) [not null]
+  store_id varchar(10) [not null]
+  store_name varchar(150)
+  region varchar(50)
+  monthly_sales_target numeric(14,2)
+  total_revenue numeric(14,2)
+  total_cost numeric(14,2)
+  gross_profit numeric(14,2)
+  operating_expense numeric(14,2)
+  operating_profit numeric(14,2)
+  target_achievement_percent numeric(8,2)
+  risk_status varchar(50) [not null]
+}
+
+Table vendor_deliveries {
+  purchase_order_id varchar(20) [pk]
+  order_date date [not null]
+  expected_delivery_date date [not null]
+  actual_delivery_date date [not null]
+  store_id varchar(10) [not null]
+  store_name varchar(150)
+  vendor_id varchar(10) [not null]
+  vendor_name varchar(150)
+  product_id varchar(10) [not null]
+  product_name varchar(200)
+  ordered_quantity integer [not null]
+  received_quantity integer [not null]
+  unit_cost numeric(12,2) [not null]
+  purchase_value numeric(14,2) [not null]
+  delay_days integer [not null]
+  delivery_status varchar(100) [not null]
+  quality_rating numeric(3,1)
+  assigned_employee_id varchar(10)
+}
+
+Table data_import_logs {
+  import_id bigint [pk, increment]
+  dataset_name varchar(150) [not null]
+  source_file_name varchar(250) [not null]
+  total_rows integer [not null]
+  successful_rows integer [not null]
+  failed_rows integer [not null]
+  import_status varchar(50) [not null]
+  error_message text
+  imported_at timestamp [not null]
+}
+
+// ==========================================================
+// TABLE RELATIONSHIPS
+// ==========================================================
+
+Ref: stores.manager_id > employees.employee_id
+
+Ref: products.vendor_id > vendors.vendor_id
+
+Ref: sales.store_id > stores.store_id
+Ref: sales.product_id > products.product_id
+Ref: sales.employee_id > employees.employee_id
+
+Ref: inventory.store_id > stores.store_id
+Ref: inventory.product_id > products.product_id
+Ref: inventory.vendor_id > vendors.vendor_id
+
+Ref: complaints.store_id > stores.store_id
+Ref: complaints.product_id > products.product_id
+Ref: complaints.assigned_employee_id > employees.employee_id
+
+Ref: finance.store_id > stores.store_id
+
+Ref: vendor_deliveries.store_id > stores.store_id
+Ref: vendor_deliveries.vendor_id > vendors.vendor_id
+Ref: vendor_deliveries.product_id > products.product_id
+Ref: vendor_deliveries.assigned_employee_id > employees.employee_id

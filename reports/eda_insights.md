@@ -11,7 +11,7 @@ The cleaned dataset contains the following records:
 | Vendors | 10 | 11 |
 | Employees | 25 | 10 |
 | Sales | 44,435 | 16 |
-| Inventory | 250 | 14 |
+| Inventory | 250 | 13 |
 | Complaints | 1,572 | 15 |
 | Finance | 60 | 13 |
 | Vendor Deliveries | 85 | 18 |

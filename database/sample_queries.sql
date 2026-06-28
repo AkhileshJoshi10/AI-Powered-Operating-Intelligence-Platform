@@ -26,6 +26,39 @@ UNION ALL
 SELECT 'vendor_deliveries', COUNT(*) FROM vendor_deliveries
 ORDER BY table_name;
 
+-- Check history of all loaded data
+SELECT
+    dataset_name,
+    source_file_name,
+    total_rows,
+    successful_rows,
+    failed_rows,
+    import_status,
+    imported_at
+FROM data_import_logs
+ORDER BY import_id;
+
+-- Check latest import status for each dataset
+WITH latest_imports AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY dataset_name
+            ORDER BY imported_at DESC
+        ) AS row_num
+    FROM data_import_logs
+)
+SELECT
+    dataset_name,
+    source_file_name,
+    total_rows,
+    successful_rows,
+    failed_rows,
+    import_status,
+    imported_at
+FROM latest_imports
+WHERE row_num = 1
+ORDER BY dataset_name;
 
 -- ==========================================================
 -- 2. MONTHLY SALES AND PROFIT TREND
@@ -270,3 +303,115 @@ ORDER BY
     related_high_severity_complaints DESC,
     related_complaints DESC,
     i.current_stock ASC;
+
+	
+-- ==========================================================
+-- 12. TOP 10 PRODUCTS BY SALES
+-- ==========================================================
+
+SELECT
+    product_id,
+    product_name,
+    ROUND(SUM(total_sales), 2) AS total_sales,
+    ROUND(SUM(profit), 2) AS total_profit,
+    SUM(quantity_sold) AS quantity_sold
+FROM sales
+GROUP BY
+    product_id,
+    product_name
+ORDER BY total_sales DESC
+LIMIT 10;
+
+-- ==========================================================
+-- 13. OVERSTOCK ITEMS
+-- ==========================================================
+
+SELECT
+    inventory_id,
+    store_id,
+    store_name,
+    product_id,
+    product_name,
+    current_stock,
+    reorder_level,
+    stock_status
+FROM inventory
+WHERE stock_status = 'Overstock'
+ORDER BY current_stock DESC;
+
+-- ==========================================================
+-- 14. CROSS-FUNCTIONAL STORE RISK SUMMARY
+-- Combines sales, complaints, inventory, and finance.
+-- ==========================================================
+
+WITH store_sales AS (
+    SELECT
+        store_id,
+        ROUND(SUM(total_sales), 2) AS total_sales,
+        ROUND(SUM(profit), 2) AS total_profit
+    FROM sales
+    GROUP BY store_id
+),
+store_complaints AS (
+    SELECT
+        store_id,
+        COUNT(complaint_id) AS complaint_count,
+        COUNT(*) FILTER (
+            WHERE severity = 'High'
+        ) AS high_severity_complaints
+    FROM complaints
+    GROUP BY store_id
+),
+store_inventory AS (
+    SELECT
+        store_id,
+        COUNT(*) FILTER (
+            WHERE stock_status = 'Low Stock'
+        ) AS low_stock_items,
+        COUNT(*) FILTER (
+            WHERE stock_status = 'Reorder Soon'
+        ) AS reorder_soon_items,
+        COUNT(*) FILTER (
+            WHERE stock_status = 'Overstock'
+        ) AS overstock_items
+    FROM inventory
+    GROUP BY store_id
+),
+latest_finance AS (
+    SELECT DISTINCT ON (store_id)
+        store_id,
+        month,
+        target_achievement_percent,
+        operating_profit,
+        risk_status
+    FROM finance
+    ORDER BY
+        store_id,
+        month DESC
+)
+SELECT
+    stores.store_id,
+    stores.store_name,
+    store_sales.total_sales,
+    store_sales.total_profit,
+    store_complaints.complaint_count,
+    store_complaints.high_severity_complaints,
+    store_inventory.low_stock_items,
+    store_inventory.reorder_soon_items,
+    store_inventory.overstock_items,
+    latest_finance.month AS latest_finance_month,
+    latest_finance.target_achievement_percent,
+    latest_finance.operating_profit,
+    latest_finance.risk_status
+FROM stores
+LEFT JOIN store_sales
+    ON stores.store_id = store_sales.store_id
+LEFT JOIN store_complaints
+    ON stores.store_id = store_complaints.store_id
+LEFT JOIN store_inventory
+    ON stores.store_id = store_inventory.store_id
+LEFT JOIN latest_finance
+    ON stores.store_id = latest_finance.store_id
+ORDER BY
+    latest_finance.target_achievement_percent ASC NULLS LAST,
+    store_complaints.complaint_count DESC NULLS LAST;

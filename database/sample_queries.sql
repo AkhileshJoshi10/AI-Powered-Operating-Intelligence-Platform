@@ -415,3 +415,126 @@ LEFT JOIN latest_finance
 ORDER BY
     latest_finance.target_achievement_percent ASC NULLS LAST,
     store_complaints.complaint_count DESC NULLS LAST;
+
+-- ==========================================================
+-- 15. SALES DECLINE BY STORE
+-- Identifies stores with a 20% or more month-on-month decline.
+-- ==========================================================
+
+WITH monthly_store_sales AS (
+    SELECT
+        store_id,
+        store_name,
+        TO_CHAR(date, 'YYYY-MM') AS month,
+        SUM(total_sales) AS monthly_sales
+    FROM sales
+    GROUP BY
+        store_id,
+        store_name,
+        TO_CHAR(date, 'YYYY-MM')
+),
+sales_comparison AS (
+    SELECT
+        store_id,
+        store_name,
+        month,
+        monthly_sales,
+        LAG(monthly_sales) OVER (
+            PARTITION BY store_id
+            ORDER BY month
+        ) AS previous_month_sales
+    FROM monthly_store_sales
+)
+SELECT
+    store_id,
+    store_name,
+    month,
+    ROUND(previous_month_sales, 2) AS previous_month_sales,
+    ROUND(monthly_sales, 2) AS current_month_sales,
+    ROUND(
+        (
+            (previous_month_sales - monthly_sales)
+            / previous_month_sales
+        ) * 100,
+        2
+    ) AS sales_decline_percent
+FROM sales_comparison
+WHERE
+    previous_month_sales IS NOT NULL
+    AND monthly_sales < previous_month_sales * 0.80
+ORDER BY
+    month DESC,
+    sales_decline_percent DESC;
+
+
+-- ==========================================================
+-- 16. PRODUCTS NEAR EXPIRY
+-- Uses the inventory record date as the reference date.
+-- ==========================================================
+
+SELECT
+    i.inventory_id,
+    i.date AS inventory_date,
+    i.store_id,
+    i.store_name,
+    i.product_id,
+    i.product_name,
+    i.current_stock,
+    i.expiry_date,
+    i.expiry_date - i.date AS days_to_expiry
+FROM inventory AS i
+JOIN products AS p
+    ON i.product_id = p.product_id
+WHERE
+    p.is_perishable = 'Yes'
+    AND i.expiry_date IS NOT NULL
+    AND i.expiry_date - i.date BETWEEN 0 AND 30
+ORDER BY
+    days_to_expiry ASC,
+    i.current_stock DESC;
+
+
+-- ==========================================================
+-- 17. OPEN HIGH-SEVERITY COMPLAINTS
+-- ==========================================================
+
+SELECT
+    complaint_id,
+    date,
+    store_id,
+    store_name,
+    product_id,
+    product_name,
+    complaint_type,
+    complaint_description,
+    severity,
+    status,
+    assigned_employee_id,
+    resolution_time_days
+FROM complaints
+WHERE
+    severity = 'High'
+    AND status IN ('Open', 'In Progress')
+ORDER BY
+    date ASC,
+    resolution_time_days DESC NULLS LAST;
+
+
+-- ==========================================================
+-- 18. TARGET ACHIEVEMENT BY STORE
+-- Latest available finance month for each store.
+-- ==========================================================
+
+SELECT DISTINCT ON (store_id)
+    store_id,
+    store_name,
+    month,
+    monthly_sales_target,
+    total_revenue,
+    target_achievement_percent,
+    operating_profit,
+    risk_status
+FROM finance
+ORDER BY
+    store_id,
+    month DESC;

@@ -2,7 +2,7 @@
 
 ## AI-Powered Operating Intelligence Platform
 
-**Generated At:** 2026-06-30 14:50:25
+**Generated At:** 2026-06-30 16:41:52
 
 This report contains business issues identified through deterministic SQL and Python analytics rules. These results will later be used by the AI agents for root-cause analysis and recommendations.
 

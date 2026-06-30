@@ -383,7 +383,7 @@ def detect_critical_inventory_risk(engine: Engine) -> list[dict]:
                 issue_id=(
                     f"INV-{row.store_id}-{row.product_id}-{row.date}"
                 ),
-                issue_type="Inventory  Stock Risk",
+                issue_type="Inventory Stock Risk",
                 business_area="Operations",
                 priority_score=score,
                 entity_type="Store Product",

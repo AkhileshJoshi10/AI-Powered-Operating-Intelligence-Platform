@@ -2,7 +2,7 @@
 
 ## AI-Powered Operating Intelligence Platform
 
-**Generated At:** 2026-06-30 16:47:26
+**Generated At:** 2026-07-01 06:33:55
 
 This report provides evidence-based probable root causes for High and Medium priority issues. The findings are generated from PostgreSQL business data using deterministic analytics rules.
 

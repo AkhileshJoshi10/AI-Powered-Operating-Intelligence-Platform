@@ -1,81 +1,17 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote_plus
 
 import pandas as pd
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from backend.database import get_database_engine, read_query
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPORTS_DIRECTORY = PROJECT_ROOT / "reports"
 ISSUES_CSV_PATH = REPORTS_DIRECTORY / "detected_issues.csv"
-
-load_dotenv(PROJECT_ROOT / ".env")
-
-
-def get_database_url() -> str:
-    """Build the PostgreSQL connection URL from .env values."""
-
-    database_url = os.getenv("DATABASE_URL")
-
-    if database_url:
-        return database_url
-
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "5432")
-    database_name = os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
-    username = os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
-    password = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD")
-
-    missing_values = []
-
-    if not database_name:
-        missing_values.append("DB_NAME")
-
-    if not username:
-        missing_values.append("DB_USER")
-
-    if not password:
-        missing_values.append("DB_PASSWORD")
-
-    if missing_values:
-        raise ValueError(
-            "Missing database settings in .env: "
-            + ", ".join(missing_values)
-        )
-
-    encoded_password = quote_plus(password)
-
-    return (
-        f"postgresql+psycopg2://{username}:{encoded_password}"
-        f"@{host}:{port}/{database_name}"
-    )
-
-
-def get_database_engine() -> Engine:
-    """Create and return the SQLAlchemy database engine."""
-
-    return create_engine(get_database_url())
-
-
-def read_query(
-    engine: Engine,
-    query: str,
-    parameters: dict | None = None,
-) -> pd.DataFrame:
-    """Run a SQL query and return the result as a DataFrame."""
-
-    with engine.connect() as connection:
-        return pd.read_sql(
-            text(query),
-            connection,
-            params=parameters,
-        )
 
 
 def safe_float(value: object) -> float:
@@ -1360,7 +1296,9 @@ def main() -> None:
 
     try:
         for issue_index, issue in issues_to_analyze.iterrows():
-            issue_type = clean_text(issue["issue_type"])
+            issue_type = " ".join(
+                clean_text(issue["issue_type"]).split()
+            )
 
             print(
                 f"Analyzing {issue['issue_id']} "
@@ -1478,7 +1416,6 @@ def main() -> None:
 
     print(f"\nCSV report saved at: {csv_output_path}")
     print(f"Markdown report saved at: {markdown_output_path}")
-
 
 if __name__ == "__main__":
     main()

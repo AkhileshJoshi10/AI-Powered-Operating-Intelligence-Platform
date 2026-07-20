@@ -1,0 +1,21 @@
+from fastapi import FastAPI
+
+from backend.app.core.config import settings
+from backend.app.routers.health import router as health_router
+from backend.app.routers.issues import router as issue_router
+from backend.app.routers.kpis import router as kpi_router
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    description=(
+        "Backend API for business KPIs, issues, root-cause analyses, "
+        "recommendations, tasks, executive briefs, and automation workflows."
+    ),
+)
+
+
+app.include_router(health_router)
+app.include_router(kpi_router)
+app.include_router(issue_router)

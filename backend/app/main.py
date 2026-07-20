@@ -4,6 +4,9 @@ from backend.app.core.config import settings
 from backend.app.routers.health import router as health_router
 from backend.app.routers.issues import router as issue_router
 from backend.app.routers.kpis import router as kpi_router
+from backend.app.routers.recommendations import (
+    router as recommendation_router,
+)
 
 
 app = FastAPI(
@@ -19,3 +22,4 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(kpi_router)
 app.include_router(issue_router)
+app.include_router(recommendation_router)

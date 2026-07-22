@@ -7,6 +7,7 @@ from backend.app.routers.kpis import router as kpi_router
 from backend.app.routers.recommendations import (
     router as recommendation_router,
 )
+from backend.app.routers.tasks import router as task_router
 
 
 app = FastAPI(
@@ -23,3 +24,4 @@ app.include_router(health_router)
 app.include_router(kpi_router)
 app.include_router(issue_router)
 app.include_router(recommendation_router)
+app.include_router(task_router)

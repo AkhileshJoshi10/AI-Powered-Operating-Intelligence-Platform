@@ -148,3 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_issue_id
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status
     ON tasks(status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_recommendation_unique
+    ON tasks(recommendation_id)
+    WHERE recommendation_id IS NOT NULL;

@@ -12,6 +12,8 @@ from fastapi import (
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.schemas.tasks import (
+    TaskAssignmentRequest,
+    TaskAssignmentResponse,
     TaskConversionResponse,
     TaskDetailResponse,
     TaskListResponse,
@@ -21,6 +23,7 @@ from backend.app.schemas.tasks import (
     TaskStatusUpdateResponse,
 )
 from backend.app.services.task_service import (
+    assign_task,
     convert_recommendation_to_task,
     get_task_detail,
     get_task_list,
@@ -280,5 +283,63 @@ def change_task_status(
             detail=(
                 "The task status could not be changed because "
                 "the database operation failed."
+            ),
+        ) from error
+
+
+@router.patch(
+    "/tasks/{task_id}/assignment",
+    response_model=TaskAssignmentResponse,
+    summary="Assign a task to an employee",
+)
+def update_task_assignment(
+    task_id: Annotated[
+        int,
+        Path(
+            ge=1,
+            description="Database ID of the task.",
+        ),
+    ],
+    assignment_request: TaskAssignmentRequest,
+) -> TaskAssignmentResponse:
+    """Assign or reassign a task to a specific employee."""
+
+    try:
+        result = assign_task(
+            task_id=task_id,
+            assigned_to=assignment_request.assigned_to,
+            assigned_role=assignment_request.assigned_role,
+        )
+
+        outcome = result["outcome"]
+
+        if outcome == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="The requested task was not found.",
+            )
+
+        if outcome == "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A completed task cannot be assigned "
+                    "or reassigned."
+                ),
+            )
+
+        return TaskAssignmentResponse(
+            **result["response"]
+        )
+
+    except HTTPException:
+        raise
+
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The task could not be assigned because the "
+                "database operation failed."
             ),
         ) from error

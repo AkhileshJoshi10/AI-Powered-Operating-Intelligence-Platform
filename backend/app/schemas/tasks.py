@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 TaskStatus = Literal[
@@ -61,6 +61,25 @@ class TaskStatusUpdateRequest(BaseModel):
     status: TaskStatus
 
 
+class TaskAssignmentRequest(BaseModel):
+    """Employee assignment information for a task."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
+
+    assigned_to: str = Field(
+        min_length=2,
+        max_length=150,
+    )
+
+    assigned_role: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+
 class TaskConversionResponse(BaseModel):
     """Response returned after converting a recommendation into a task."""
 
@@ -89,6 +108,14 @@ class TaskDetailResponse(BaseModel):
 
 class TaskStatusUpdateResponse(BaseModel):
     """Response returned after changing a task's Kanban status."""
+
+    status: str = Field(default="success")
+    message: str
+    task: TaskDetail
+
+
+class TaskAssignmentResponse(BaseModel):
+    """Response returned after assigning a task."""
 
     status: str = Field(default="success")
     message: str

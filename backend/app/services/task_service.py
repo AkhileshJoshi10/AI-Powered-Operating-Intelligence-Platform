@@ -573,3 +573,134 @@ def update_task_status(
             "task": updated_task["task"],
         },
     }
+
+
+def assign_task(
+    task_id: int,
+    assigned_to: str,
+    assigned_role: str | None,
+) -> dict:
+    """Assign or reassign a task to a specific employee."""
+
+    lock_query = text(
+        """
+        SELECT
+            assigned_to,
+            assigned_role,
+            status
+        FROM tasks
+        WHERE task_id = :task_id
+        FOR UPDATE;
+        """
+    )
+
+    update_query = text(
+        """
+        UPDATE tasks
+        SET
+            assigned_to = :assigned_to,
+            assigned_role = COALESCE(
+                :assigned_role,
+                assigned_role
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE task_id = :task_id;
+        """
+    )
+
+    audit_query = text(
+        """
+        INSERT INTO audit_logs (
+            entity_type,
+            entity_id,
+            action_type,
+            actor_name,
+            old_value,
+            new_value
+        )
+        VALUES (
+            'Task',
+            CAST(:task_id AS VARCHAR),
+            'Assignment Updated',
+            'API User',
+            jsonb_build_object(
+                'assigned_to',
+                :old_assigned_to,
+                'assigned_role',
+                :old_assigned_role
+            ),
+            jsonb_build_object(
+                'assigned_to',
+                :assigned_to,
+                'assigned_role',
+                :new_assigned_role
+            )
+        );
+        """
+    )
+
+    with engine.begin() as connection:
+        task_row = connection.execute(
+            lock_query,
+            {
+                "task_id": task_id,
+            },
+        ).mappings().one_or_none()
+
+        if task_row is None:
+            return {
+                "outcome": "not_found",
+            }
+
+        current_status = str(task_row["status"])
+
+        if current_status == "Completed":
+            return {
+                "outcome": "completed",
+            }
+
+        old_assigned_to = task_row["assigned_to"]
+        old_assigned_role = task_row["assigned_role"]
+
+        new_assigned_role = (
+            assigned_role
+            if assigned_role is not None
+            else old_assigned_role
+        )
+
+        parameters = {
+            "task_id": task_id,
+            "assigned_to": assigned_to,
+            "assigned_role": assigned_role,
+            "old_assigned_to": old_assigned_to,
+            "old_assigned_role": old_assigned_role,
+            "new_assigned_role": new_assigned_role,
+        }
+
+        connection.execute(
+            update_query,
+            parameters,
+        )
+
+        connection.execute(
+            audit_query,
+            parameters,
+        )
+
+    updated_task = get_task_detail(task_id)
+
+    if updated_task is None:
+        return {
+            "outcome": "not_found",
+        }
+
+    return {
+        "outcome": "success",
+        "response": {
+            "status": "success",
+            "message": (
+                f"Task assigned to '{assigned_to}' successfully."
+            ),
+            "task": updated_task["task"],
+        },
+    }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,3 +46,25 @@ class DataValidationResponse(BaseModel):
     errors: list[str]
     warnings: list[str]
     dataset_summary: list[str]
+
+
+class DataImportResponse(BaseModel):
+    """Result of a controlled dataset import."""
+
+    status: Literal["success"]
+    imported_at: datetime
+
+    dataset_name: DatasetName
+    source_file_name: str
+    destination_table: str
+
+    import_mode: Literal["upsert"] = "upsert"
+
+    total_rows: int
+    successful_rows: int
+    failed_rows: int
+
+    raw_validation_warnings: list[str]
+    cleaning_summary: dict[str, Any]
+
+    message: str

@@ -68,3 +68,35 @@ class DataImportResponse(BaseModel):
     cleaning_summary: dict[str, Any]
 
     message: str
+
+
+class DataImportHistoryItem(BaseModel):
+    """One historical dataset-import record."""
+
+    import_id: int
+    dataset_name: str
+    source_file_name: str
+
+    total_rows: int
+    successful_rows: int
+    failed_rows: int
+
+    import_status: str
+    error_message: str | None = None
+
+    imported_at: datetime
+
+
+class DataImportHistoryResponse(BaseModel):
+    """Paginated dataset-import history."""
+
+    status: Literal["success"] = "success"
+    generated_at: datetime
+
+    total_records: int
+    matching_records: int
+
+    limit: int
+    offset: int
+
+    imports: list[DataImportHistoryItem]

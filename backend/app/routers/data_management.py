@@ -7,6 +7,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
@@ -16,9 +17,13 @@ from sqlalchemy.exc import (
 )
 
 from backend.app.schemas.data_management import (
+    DataImportHistoryResponse,
     DataImportResponse,
     DataValidationResponse,
     DatasetName,
+)
+from backend.app.services.data_import_history_service import (
+    get_import_history,
 )
 from backend.app.services.data_import_service import (
     ImportValidationError,
@@ -179,3 +184,84 @@ async def import_data(
 
     finally:
         await file.close()
+
+
+@router.get(
+    "/import-history",
+    response_model=DataImportHistoryResponse,
+    summary="Get dataset import history",
+)
+def read_import_history(
+    dataset_name: Annotated[
+        DatasetName | None,
+        Query(
+            description=(
+                "Filter import records by business dataset."
+            ),
+        ),
+    ] = None,
+    import_status: Annotated[
+        str | None,
+        Query(
+            min_length=2,
+            max_length=50,
+            description=(
+                "Filter by import status, such as Success, "
+                "Failed, or Rejected."
+            ),
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=100,
+            description=(
+                "Maximum number of import records returned."
+            ),
+        ),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(
+            ge=0,
+            description=(
+                "Number of matching import records to skip."
+            ),
+        ),
+    ] = 0,
+) -> DataImportHistoryResponse:
+    """Return the latest data import records."""
+
+    try:
+        response_data = get_import_history(
+            dataset_name=dataset_name,
+            import_status=import_status,
+            limit=limit,
+            offset=offset,
+        )
+
+        return DataImportHistoryResponse(
+            **response_data
+        )
+
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Import history could not be loaded because "
+                "the database operation failed."
+            ),
+        ) from error
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Import history could not be processed."
+            ),
+        ) from error

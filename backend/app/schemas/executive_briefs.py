@@ -23,9 +23,24 @@ class ExecutiveBriefItem(BaseModel):
 
 
 class LatestExecutiveBriefResponse(BaseModel):
-    """Response containing the latest stored executive brief."""
+    """Response containing the latest stored Executive Brief."""
 
     status: Literal["success"] = "success"
     generated_at: datetime
 
+    brief: ExecutiveBriefItem
+
+
+class GenerateExecutiveBriefResponse(BaseModel):
+    """Result of generating the Daily Executive Brief."""
+
+    status: Literal["success"] = "success"
+    generated_at: datetime
+
+    action: Literal[
+        "created",
+        "updated",
+    ]
+
+    message: str
     brief: ExecutiveBriefItem

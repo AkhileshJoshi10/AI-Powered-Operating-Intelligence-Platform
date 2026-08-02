@@ -7,6 +7,9 @@ from backend.app.routers.analytics import (
 from backend.app.routers.data_management import (
     router as data_management_router,
 )
+from backend.app.routers.executive_briefs import (
+    router as executive_brief_router,
+)
 from backend.app.routers.health import (
     router as health_router,
 )
@@ -30,7 +33,8 @@ app = FastAPI(
     description=(
         "Backend API for business KPIs, analytics, issues, "
         "root-cause analyses, recommendations, tasks, "
-        "data management, executive briefs, and automation workflows."
+        "data management, executive briefs, and "
+        "automation workflows."
     ),
 )
 
@@ -42,3 +46,4 @@ app.include_router(recommendation_router)
 app.include_router(task_router)
 app.include_router(analytics_router)
 app.include_router(data_management_router)
+app.include_router(executive_brief_router)

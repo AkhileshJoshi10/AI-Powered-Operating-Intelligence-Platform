@@ -1,16 +1,22 @@
 # Python cache
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 
-# Virtual environment
+# Virtual environments
 venv/
 env/
 .venv/
 
-# Environment variables
+# Environment variables and secrets
 .env
+.env.test
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
@@ -24,13 +30,6 @@ env/
 *.pdf
 *.png
 
-# System files
-.DS_Store
-Thumbs.db
-
-# VS Code settings
-.vscode/
-
 # Logs
 *.log
 
@@ -41,3 +40,10 @@ tmp/
 # Generated reports
 reports/*.pdf
 reports/*.docx
+
+# IDE settings
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db

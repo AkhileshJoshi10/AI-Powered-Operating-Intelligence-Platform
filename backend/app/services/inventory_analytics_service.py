@@ -71,7 +71,13 @@ def clean_optional_int(value: object) -> int | None:
 
 
 def clean_optional_date(value: object) -> date | None:
-    """Convert an optional date-like value into a date."""
+    """
+    Convert an optional date-like value into a date.
+
+    Missing values are checked both before and after parsing because
+    text values such as "NaT" are converted into pandas NaT during
+    date parsing.
+    """
 
     if is_missing(value):
         return None
@@ -86,6 +92,9 @@ def clean_optional_date(value: object) -> date | None:
         value,
         errors="raise",
     )
+
+    if is_missing(parsed_value):
+        return None
 
     return parsed_value.date()
 
@@ -148,7 +157,9 @@ def build_inventory_finding_record(row: object) -> dict:
         "inventory_date": clean_optional_date(
             row.inventory_date
         ),
-        "expiry_date": clean_optional_date(row.expiry_date),
+        "expiry_date": clean_optional_date(
+            row.expiry_date
+        ),
         "days_to_expiry": clean_optional_int(
             row.days_to_expiry
         ),
@@ -158,8 +169,12 @@ def build_inventory_finding_record(row: object) -> dict:
         "reorder_level": clean_optional_float(
             row.reorder_level
         ),
-        "stock_ratio": clean_optional_float(row.stock_ratio),
-        "stock_status": clean_required_text(row.stock_status),
+        "stock_ratio": clean_optional_float(
+            row.stock_ratio
+        ),
+        "stock_status": clean_required_text(
+            row.stock_status
+        ),
         "reorder_required": clean_required_text(
             row.reorder_required
         ),
@@ -220,10 +235,16 @@ def build_inventory_summary(
             "analysis_type": clean_required_text(
                 row.analysis_type
             ),
-            "severity": clean_required_text(row.severity),
-            "finding_count": int(row.finding_count),
+            "severity": clean_required_text(
+                row.severity
+            ),
+            "finding_count": int(
+                row.finding_count
+            ),
         }
-        for row in summary_dataframe.itertuples(index=False)
+        for row in summary_dataframe.itertuples(
+            index=False
+        )
     ]
 
 
@@ -239,11 +260,17 @@ def get_inventory_analytics(
 ) -> dict:
     """Run and return current inventory analytics findings."""
 
-    findings_dataframe = run_inventory_analysis(engine)
+    findings_dataframe = run_inventory_analysis(
+        engine
+    )
 
-    total_findings = len(findings_dataframe)
+    total_findings = len(
+        findings_dataframe
+    )
 
-    filtered_findings = findings_dataframe.copy()
+    filtered_findings = (
+        findings_dataframe.copy()
+    )
 
     filtered_findings = apply_exact_text_filter(
         filtered_findings,
@@ -275,11 +302,15 @@ def get_inventory_analytics(
         filter_value=vendor_id,
     )
 
-    filtered_findings = filtered_findings.reset_index(
-        drop=True
+    filtered_findings = (
+        filtered_findings.reset_index(
+            drop=True
+        )
     )
 
-    matching_findings = len(filtered_findings)
+    matching_findings = len(
+        filtered_findings
+    )
 
     summary_records = build_inventory_summary(
         filtered_findings

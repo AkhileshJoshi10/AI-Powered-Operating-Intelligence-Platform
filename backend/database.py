@@ -24,8 +24,15 @@ def get_database_url() -> str:
     if database_url:
         return database_url
 
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "5432")
+    host = (
+    os.getenv("DB_HOST")
+    or os.getenv("POSTGRES_HOST", "localhost")
+    )
+
+    port = (
+    os.getenv("DB_PORT")
+    or os.getenv("POSTGRES_PORT", "5432")
+    )
     database_name = os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
     username = os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
     password = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD")

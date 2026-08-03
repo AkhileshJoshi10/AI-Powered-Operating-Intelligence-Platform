@@ -138,7 +138,7 @@ async def import_data(
 
     except ImportValidationError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": str(error),
                 "errors": error.errors,

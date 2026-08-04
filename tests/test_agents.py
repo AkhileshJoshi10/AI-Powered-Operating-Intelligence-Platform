@@ -730,3 +730,1527 @@ def test_postgres_logger_persists_and_deletes_agent_run(
                         "agent_run_id": agent_run_id,
                     },
                 )
+
+# -------------------------------------------------------------------------
+# Monitoring Agent tests
+# -------------------------------------------------------------------------
+
+import backend.app.agents.monitoring_agent as monitoring_module
+from backend.app.agents import MonitoringAgent
+
+
+def build_mock_monitoring_finding(
+    *,
+    finding_id: str,
+    analysis_type: str,
+    business_area: str,
+    severity: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Build one analytics finding for Monitoring Agent tests."""
+
+    return {
+        "finding_id": finding_id,
+        "analysis_type": analysis_type,
+        "business_area": business_area,
+        "severity": severity,
+        "entity_type": "Test Entity",
+        "entity_id": entity_id,
+        "summary": f"Summary for {finding_id}.",
+        "evidence": f"Evidence for {finding_id}.",
+    }
+
+
+def build_mock_monitoring_response(
+    *,
+    total_findings: int,
+    high_count: int,
+    medium_count: int,
+    low_count: int,
+    findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build one valid analytics-service response."""
+
+    summary: list[dict[str, Any]] = []
+
+    for severity, finding_count in [
+        ("High", high_count),
+        ("Medium", medium_count),
+        ("Low", low_count),
+    ]:
+        if finding_count > 0:
+            summary.append(
+                {
+                    "analysis_type": "Test Analysis",
+                    "severity": severity,
+                    "finding_count": finding_count,
+                }
+            )
+
+    return {
+        "status": "success",
+        "generated_at": "2026-08-04T04:30:00",
+        "total_findings": total_findings,
+        "matching_findings": total_findings,
+        "limit": 10,
+        "offset": 0,
+        "summary": summary,
+        "findings": findings,
+    }
+
+
+def configure_successful_monitoring_services(
+    monkeypatch: Any,
+) -> None:
+    """Configure all Monitoring Agent services to succeed."""
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_kpi_response",
+        lambda: {
+            "status": "success",
+            "total_kpis": 2,
+            "kpis": [
+                {
+                    "kpi_key": "total_sales",
+                    "kpi_name": "Total Sales",
+                    "value": 100000.00,
+                    "display_value": "₹100,000.00",
+                    "unit": "Currency",
+                    "reference_period": "2026-06",
+                    "description": "Total sales value.",
+                    "calculated_at": "2026-08-04T04:30:00",
+                },
+                {
+                    "kpi_key": "low_stock_count",
+                    "kpi_name": "Low-Stock Count",
+                    "value": 5,
+                    "display_value": "5",
+                    "unit": "Count",
+                    "reference_period": "2026-06",
+                    "description": "Low-stock products.",
+                    "calculated_at": "2026-08-04T04:30:00",
+                },
+            ],
+            "latest_store_target_achievement": [],
+        },
+    )
+
+    sales_response = build_mock_monitoring_response(
+        total_findings=2,
+        high_count=1,
+        medium_count=1,
+        low_count=0,
+        findings=[
+            build_mock_monitoring_finding(
+                finding_id="SALES-HIGH-001",
+                analysis_type="Store Sales Decline",
+                business_area="Sales",
+                severity="High",
+                entity_id="S001",
+            ),
+            build_mock_monitoring_finding(
+                finding_id="SALES-MEDIUM-001",
+                analysis_type="Low Target Achievement",
+                business_area="Sales",
+                severity="Medium",
+                entity_id="S002",
+            ),
+        ],
+    )
+
+    inventory_response = build_mock_monitoring_response(
+        total_findings=3,
+        high_count=1,
+        medium_count=1,
+        low_count=1,
+        findings=[
+            build_mock_monitoring_finding(
+                finding_id="INVENTORY-HIGH-001",
+                analysis_type="Low Stock",
+                business_area="Operations",
+                severity="High",
+                entity_id="S001-P001",
+            ),
+            build_mock_monitoring_finding(
+                finding_id="INVENTORY-LOW-001",
+                analysis_type="Reorder Soon",
+                business_area="Operations",
+                severity="Low",
+                entity_id="S002-P002",
+            ),
+        ],
+    )
+
+    complaint_response = build_mock_monitoring_response(
+        total_findings=4,
+        high_count=2,
+        medium_count=2,
+        low_count=0,
+        findings=[
+            build_mock_monitoring_finding(
+                finding_id="COMPLAINT-HIGH-001",
+                analysis_type="Open High-Severity Complaint",
+                business_area="Customer Service",
+                severity="High",
+                entity_id="C001",
+            ),
+        ],
+    )
+
+    vendor_response = build_mock_monitoring_response(
+        total_findings=2,
+        high_count=1,
+        medium_count=1,
+        low_count=0,
+        findings=[
+            build_mock_monitoring_finding(
+                finding_id="VENDOR-HIGH-001",
+                analysis_type="Repeated Vendor Delays",
+                business_area="Procurement",
+                severity="High",
+                entity_id="V001",
+            ),
+        ],
+    )
+
+    finance_response = build_mock_monitoring_response(
+        total_findings=1,
+        high_count=1,
+        medium_count=0,
+        low_count=0,
+        findings=[
+            build_mock_monitoring_finding(
+                finding_id="FINANCE-HIGH-001",
+                analysis_type="High Financial Risk",
+                business_area="Finance",
+                severity="High",
+                entity_id="S001",
+            ),
+        ],
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_sales_analytics",
+        lambda **_: sales_response,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_inventory_analytics",
+        lambda **_: inventory_response,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_complaint_analytics",
+        lambda **_: complaint_response,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_vendor_analytics",
+        lambda **_: vendor_response,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_finance_analytics",
+        lambda **_: finance_response,
+    )
+
+
+def test_monitoring_agent_returns_complete_snapshot(
+    monkeypatch: Any,
+) -> None:
+    """All successful services should produce a complete snapshot."""
+
+    configure_successful_monitoring_services(
+        monkeypatch
+    )
+
+    context = AgentContext(
+        run_type="monitoring-unit-test",
+        input_data={
+            "finding_limit": 5,
+        },
+    )
+
+    result = asyncio.run(
+        MonitoringAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    output_data = result.output_data
+
+    assert (
+        output_data["monitoring_status"]
+        == "Complete"
+    )
+
+    assert output_data["successful_sources"] == [
+        "kpis",
+        "sales",
+        "inventory",
+        "complaints",
+        "vendors",
+        "finance",
+    ]
+
+    assert output_data["failed_sources"] == []
+
+    assert (
+        output_data["kpi_snapshot"]["total_kpis"]
+        == 2
+    )
+
+    assert output_data["finding_totals"] == {
+        "total": 12,
+        "by_source": {
+            "sales": 2,
+            "inventory": 3,
+            "complaints": 4,
+            "vendors": 2,
+            "finance": 1,
+        },
+        "by_severity": {
+            "High": 6,
+            "Medium": 5,
+            "Low": 1,
+        },
+    }
+
+    assert len(
+        output_data["top_findings"]
+    ) == 5
+
+    assert all(
+        finding["severity"] == "High"
+        for finding in output_data[
+            "top_findings"
+        ]
+    )
+
+    assert (
+        "Monitoring completed with 2 KPIs "
+        "and 12 business findings"
+        in result.summary
+    )
+
+
+def test_monitoring_agent_returns_partial_snapshot(
+    monkeypatch: Any,
+) -> None:
+    """One source failure should not prevent other sources running."""
+
+    configure_successful_monitoring_services(
+        monkeypatch
+    )
+
+    def raise_inventory_failure(
+        **_: Any,
+    ) -> dict[str, Any]:
+        raise RuntimeError(
+            "Simulated inventory monitoring failure."
+        )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_inventory_analytics",
+        raise_inventory_failure,
+    )
+
+    context = AgentContext(
+        run_type="partial-monitoring-test",
+    )
+
+    result = asyncio.run(
+        MonitoringAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    output_data = result.output_data
+
+    assert (
+        output_data["monitoring_status"]
+        == "Partial"
+    )
+
+    assert "inventory" not in (
+        output_data["successful_sources"]
+    )
+
+    assert len(
+        output_data["failed_sources"]
+    ) == 1
+
+    failure = output_data[
+        "failed_sources"
+    ][0]
+
+    assert failure["source"] == "inventory"
+    assert failure["error_type"] == "RuntimeError"
+    assert (
+        failure["error_message"]
+        == "Simulated inventory monitoring failure."
+    )
+
+    assert (
+        output_data["finding_totals"]["total"]
+        == 9
+    )
+
+    assert (
+        "Partial monitoring was returned"
+        in result.summary
+    )
+
+
+def test_monitoring_agent_fails_when_every_source_fails(
+    monkeypatch: Any,
+) -> None:
+    """The agent should fail when no monitoring source succeeds."""
+
+    def raise_monitoring_failure(
+        *_: Any,
+        **__: Any,
+    ) -> dict[str, Any]:
+        raise RuntimeError(
+            "Simulated monitoring source failure."
+        )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_kpi_response",
+        raise_monitoring_failure,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_sales_analytics",
+        raise_monitoring_failure,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_inventory_analytics",
+        raise_monitoring_failure,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_complaint_analytics",
+        raise_monitoring_failure,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_vendor_analytics",
+        raise_monitoring_failure,
+    )
+
+    monkeypatch.setattr(
+        monitoring_module,
+        "get_finance_analytics",
+        raise_monitoring_failure,
+    )
+
+    context = AgentContext(
+        run_type="failed-monitoring-test",
+    )
+
+    result = asyncio.run(
+        MonitoringAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == (
+            "All monitoring sources failed: "
+            "kpis, sales, inventory, complaints, "
+            "vendors, finance."
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid_limit",
+    [
+        pytest.param(
+            0,
+            id="below-minimum",
+        ),
+        pytest.param(
+            101,
+            id="above-maximum",
+        ),
+        pytest.param(
+            True,
+            id="boolean-value",
+        ),
+        pytest.param(
+            "invalid",
+            id="non-integer-text",
+        ),
+    ],
+)
+def test_monitoring_agent_rejects_invalid_finding_limit(
+    invalid_limit: object,
+) -> None:
+    """The finding limit must be an integer between 1 and 100."""
+
+    context = AgentContext(
+        run_type="invalid-limit-test",
+        input_data={
+            "finding_limit": invalid_limit,
+        },
+    )
+
+    result = asyncio.run(
+        MonitoringAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+
+@pytest.mark.integration
+def test_monitoring_agent_with_seeded_test_database(
+) -> None:
+    """The real services should produce the known seeded snapshot."""
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="monitoring-integration-test",
+        requested_by="pytest",
+        input_data={
+            "finding_limit": 10,
+        },
+    )
+
+    result = asyncio.run(
+        MonitoringAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    output_data = result.output_data
+
+    assert (
+        output_data["monitoring_status"]
+        == "Complete"
+    )
+
+    assert (
+        output_data["kpi_snapshot"]["total_kpis"]
+        == 12
+    )
+
+    assert output_data["finding_totals"] == {
+        "total": 495,
+        "by_source": {
+            "sales": 5,
+            "inventory": 122,
+            "complaints": 345,
+            "vendors": 19,
+            "finance": 4,
+        },
+        "by_severity": {
+            "High": 294,
+            "Medium": 139,
+            "Low": 62,
+        },
+    }
+
+    assert output_data["successful_sources"] == [
+        "kpis",
+        "sales",
+        "inventory",
+        "complaints",
+        "vendors",
+        "finance",
+    ]
+
+    assert output_data["failed_sources"] == []
+
+    assert len(
+        output_data["top_findings"]
+    ) == 10
+
+    # -------------------------------------------------------------------------
+# Priority Agent tests
+# -------------------------------------------------------------------------
+
+import pandas as pd
+
+import backend.app.agents.priority_agent as priority_module
+from backend.app.agents import PriorityAgent
+
+
+def build_mock_priority_pipeline_data(
+) -> dict[str, Any]:
+    """Build controlled Priority Agent pipeline data."""
+
+    detailed_findings = pd.DataFrame(
+        [
+            {"finding_id": "FINDING-001"},
+            {"finding_id": "FINDING-002"},
+            {"finding_id": "FINDING-003"},
+            {"finding_id": "FINDING-004"},
+            {"finding_id": "FINDING-005"},
+        ]
+    )
+
+    source_finding_counts = {
+        "sales": 2,
+        "inventory": 1,
+        "complaints": 1,
+        "vendors": 1,
+        "finance": 0,
+    }
+
+    issues = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "priority_level": "High",
+            },
+            {
+                "issue_id": "ISSUE-MEDIUM-001",
+                "priority_level": "Medium",
+            },
+            {
+                "issue_id": "ISSUE-LOW-001",
+                "priority_level": "Low",
+            },
+        ]
+    )
+
+    evidence = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "source_finding_id": "FINDING-001",
+            },
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "source_finding_id": "FINDING-002",
+            },
+            {
+                "issue_id": "ISSUE-MEDIUM-001",
+                "source_finding_id": "FINDING-003",
+            },
+            {
+                "issue_id": "ISSUE-LOW-001",
+                "source_finding_id": "FINDING-004",
+            },
+            {
+                "issue_id": "ISSUE-LOW-001",
+                "source_finding_id": "FINDING-005",
+            },
+        ]
+    )
+
+    manager_priorities = pd.DataFrame(
+        [
+            {
+                "manager_rank": 1,
+                "issue_id": "ISSUE-HIGH-001",
+                "title": "High-priority test issue",
+                "priority_level": "High",
+                "priority_score": 95.0,
+            },
+            {
+                "manager_rank": 2,
+                "issue_id": "ISSUE-MEDIUM-001",
+                "title": "Medium-priority test issue",
+                "priority_level": "Medium",
+                "priority_score": 60.0,
+            },
+        ]
+    )
+
+    active_issue_summary = pd.DataFrame(
+        [
+            {
+                "priority_level": "High",
+                "issue_count": 1,
+            },
+            {
+                "priority_level": "Medium",
+                "issue_count": 1,
+            },
+            {
+                "priority_level": "Low",
+                "issue_count": 1,
+            },
+        ]
+    )
+
+    active_issues = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+            },
+            {
+                "issue_id": "ISSUE-MEDIUM-001",
+            },
+            {
+                "issue_id": "ISSUE-LOW-001",
+            },
+        ]
+    )
+
+    executive_priorities = pd.DataFrame(
+        [
+            {
+                "executive_rank": 1,
+                "issue_id": "ISSUE-HIGH-001",
+                "title": "High-priority test issue",
+                "priority_level": "High",
+                "priority_score": 95.0,
+                "executive_score": 130.0,
+            },
+        ]
+    )
+
+    return {
+        "detailed_findings": detailed_findings,
+        "source_finding_counts": source_finding_counts,
+        "issues": issues,
+        "evidence": evidence,
+        "manager_priorities": manager_priorities,
+        "active_issue_summary": active_issue_summary,
+        "active_issues": active_issues,
+        "executive_priorities": executive_priorities,
+        "persistence_calls": [],
+    }
+
+
+def configure_successful_priority_pipeline(
+    monkeypatch: Any,
+) -> dict[str, Any]:
+    """Configure all Priority Agent dependencies to succeed."""
+
+    pipeline_data = build_mock_priority_pipeline_data()
+
+    monkeypatch.setattr(
+        priority_module,
+        "build_detailed_findings",
+        lambda: (
+            pipeline_data[
+                "detailed_findings"
+            ].copy(),
+            pipeline_data[
+                "source_finding_counts"
+            ].copy(),
+        ),
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "build_priority_outputs",
+        lambda detailed_findings: (
+            pipeline_data["issues"].copy(),
+            pipeline_data["evidence"].copy(),
+        ),
+    )
+
+    def fake_save_to_database(
+        database_engine: Any,
+        issues_dataframe: pd.DataFrame,
+        evidence_dataframe: pd.DataFrame,
+    ) -> None:
+        pipeline_data[
+            "persistence_calls"
+        ].append(
+            {
+                "engine": database_engine,
+                "issue_count": len(
+                    issues_dataframe
+                ),
+                "evidence_count": len(
+                    evidence_dataframe
+                ),
+            }
+        )
+
+    monkeypatch.setattr(
+        priority_module,
+        "save_to_database",
+        fake_save_to_database,
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "load_manager_priorities",
+        lambda database_engine, limit: (
+            pipeline_data[
+                "manager_priorities"
+            ]
+            .head(limit)
+            .copy()
+        ),
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "load_active_issue_summary",
+        lambda database_engine: (
+            pipeline_data[
+                "active_issue_summary"
+            ].copy()
+        ),
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "load_active_issues",
+        lambda database_engine: (
+            pipeline_data[
+                "active_issues"
+            ].copy()
+        ),
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "select_executive_priorities",
+        lambda *,
+        active_issues,
+        limit: (
+            pipeline_data[
+                "executive_priorities"
+            ]
+            .head(limit)
+            .copy()
+        ),
+    )
+
+    return pipeline_data
+
+
+def test_priority_agent_returns_complete_result(
+    monkeypatch: Any,
+) -> None:
+    """The Priority Agent should return structured priority output."""
+
+    pipeline_data = (
+        configure_successful_priority_pipeline(
+            monkeypatch
+        )
+    )
+
+    context = AgentContext(
+        run_type="priority-unit-test",
+        input_data={
+            "manager_limit": 2,
+            "executive_limit": 1,
+        },
+    )
+
+    result = asyncio.run(
+        PriorityAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert result.used_fallback is False
+
+    output_data = result.output_data
+
+    assert (
+        output_data["priority_status"]
+        == "Complete"
+    )
+
+    assert (
+        output_data["database_persisted"]
+        is True
+    )
+
+    assert output_data["detailed_findings"] == {
+        "total": 5,
+        "by_source": {
+            "sales": 2,
+            "inventory": 1,
+            "complaints": 1,
+            "vendors": 1,
+            "finance": 0,
+        },
+    }
+
+    assert output_data["issues"] == {
+        "total_created": 3,
+        "by_priority": {
+            "High": 1,
+            "Medium": 1,
+            "Low": 1,
+        },
+        "active_by_priority": {
+            "High": 1,
+            "Medium": 1,
+            "Low": 1,
+        },
+    }
+
+    assert output_data["evidence_records"] == {
+        "total": 5,
+    }
+
+    assert (
+        output_data[
+            "manager_priorities"
+        ]["requested_limit"]
+        == 2
+    )
+
+    assert (
+        output_data[
+            "manager_priorities"
+        ]["returned_count"]
+        == 2
+    )
+
+    assert (
+        len(
+            output_data[
+                "manager_priorities"
+            ]["items"]
+        )
+        == 2
+    )
+
+    assert (
+        output_data[
+            "executive_priorities"
+        ]["requested_limit"]
+        == 1
+    )
+
+    assert (
+        output_data[
+            "executive_priorities"
+        ]["returned_count"]
+        == 1
+    )
+
+    assert (
+        len(
+            output_data[
+                "executive_priorities"
+            ]["items"]
+        )
+        == 1
+    )
+
+    assert output_data[
+        "monitoring_comparison"
+    ] == {
+        "available": False,
+        "monitoring_finding_total": None,
+        "priority_input_finding_total": 5,
+        "totals_match": None,
+    }
+
+    assert (
+        "Priority analysis consolidated "
+        "5 findings into 3 business issues"
+        in result.summary
+    )
+
+    persistence_calls = pipeline_data[
+        "persistence_calls"
+    ]
+
+    assert len(
+        persistence_calls
+    ) == 1
+
+    assert (
+        persistence_calls[0]["engine"]
+        is priority_module.engine
+    )
+
+    assert (
+        persistence_calls[0]["issue_count"]
+        == 3
+    )
+
+    assert (
+        persistence_calls[0]["evidence_count"]
+        == 5
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "input_data",
+        "expected_error",
+    ),
+    [
+        pytest.param(
+            {
+                "manager_limit": 0,
+            },
+            "manager_limit must be at least 1.",
+            id="manager-below-minimum",
+        ),
+        pytest.param(
+            {
+                "manager_limit": 101,
+            },
+            (
+                "manager_limit cannot be greater "
+                "than 100."
+            ),
+            id="manager-above-maximum",
+        ),
+        pytest.param(
+            {
+                "manager_limit": True,
+            },
+            "manager_limit must be an integer.",
+            id="manager-boolean",
+        ),
+        pytest.param(
+            {
+                "manager_limit": "invalid",
+            },
+            "manager_limit must be an integer.",
+            id="manager-invalid-text",
+        ),
+        pytest.param(
+            {
+                "executive_limit": 0,
+            },
+            "executive_limit must be at least 1.",
+            id="executive-below-minimum",
+        ),
+        pytest.param(
+            {
+                "executive_limit": 51,
+            },
+            (
+                "executive_limit cannot be greater "
+                "than 50."
+            ),
+            id="executive-above-maximum",
+        ),
+        pytest.param(
+            {
+                "executive_limit": True,
+            },
+            "executive_limit must be an integer.",
+            id="executive-boolean",
+        ),
+        pytest.param(
+            {
+                "executive_limit": "invalid",
+            },
+            "executive_limit must be an integer.",
+            id="executive-invalid-text",
+        ),
+    ],
+)
+def test_priority_agent_rejects_invalid_limits(
+    input_data: dict[str, object],
+    expected_error: str,
+) -> None:
+    """Priority list limits must remain within allowed ranges."""
+
+    context = AgentContext(
+        run_type="invalid-priority-limit-test",
+        input_data=input_data,
+    )
+
+    result = asyncio.run(
+        PriorityAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+    assert (
+        result.error_message
+        == expected_error
+    )
+
+
+def test_priority_agent_fails_when_no_issues_are_created(
+    monkeypatch: Any,
+) -> None:
+    """An empty issue output should cause a controlled failure."""
+
+    detailed_findings = pd.DataFrame(
+        [
+            {
+                "finding_id": "FINDING-001",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "build_detailed_findings",
+        lambda: (
+            detailed_findings,
+            {
+                "sales": 1,
+                "inventory": 0,
+                "complaints": 0,
+                "vendors": 0,
+                "finance": 0,
+            },
+        ),
+    )
+
+    monkeypatch.setattr(
+        priority_module,
+        "build_priority_outputs",
+        lambda findings: (
+            pd.DataFrame(),
+            pd.DataFrame(),
+        ),
+    )
+
+    context = AgentContext(
+        run_type="empty-priority-test",
+    )
+
+    result = asyncio.run(
+        PriorityAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == (
+            "The priority engine did not "
+            "create any issues."
+        )
+    )
+
+
+class SequenceMonitoringAgent(
+    BaseAgent
+):
+    """Monitoring stub used for the agent-sequence test."""
+
+    name = "Monitoring Agent"
+
+    description = (
+        "Returns a controlled monitoring total "
+        "for sequence testing."
+    )
+
+    async def run(
+        self,
+        context: AgentContext,
+    ) -> dict[str, Any]:
+        del context
+
+        return {
+            "summary": (
+                "Controlled monitoring completed."
+            ),
+            "finding_totals": {
+                "total": 5,
+            },
+        }
+
+
+def test_monitoring_and_priority_sequence_shares_totals(
+    monkeypatch: Any,
+) -> None:
+    """Priority Agent should receive the prior monitoring total."""
+
+    configure_successful_priority_pipeline(
+        monkeypatch
+    )
+
+    context = AgentContext(
+        run_type="monitoring-priority-sequence-test",
+        input_data={
+            "manager_limit": 2,
+            "executive_limit": 1,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            SequenceMonitoringAgent(),
+            PriorityAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Monitoring Agent",
+                "Priority Agent",
+            ],
+            context=context,
+        )
+    )
+
+    assert len(results) == 2
+
+    monitoring_result = results[0]
+    priority_result = results[1]
+
+    assert (
+        monitoring_result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        priority_result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert priority_result.output_data[
+        "monitoring_comparison"
+    ] == {
+        "available": True,
+        "monitoring_finding_total": 5,
+        "priority_input_finding_total": 5,
+        "totals_match": True,
+    }
+
+
+@pytest.mark.integration
+def test_priority_agent_with_seeded_test_database(
+) -> None:
+    """The real priority pipeline should match seeded data."""
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="priority-integration-test",
+        requested_by="pytest",
+        input_data={
+            "manager_limit": 15,
+            "executive_limit": 10,
+        },
+    )
+
+    result = asyncio.run(
+        PriorityAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    output_data = result.output_data
+
+    assert (
+        output_data["priority_status"]
+        == "Complete"
+    )
+
+    assert (
+        output_data["database_persisted"]
+        is True
+    )
+
+    assert output_data[
+        "detailed_findings"
+    ] == {
+        "total": 495,
+        "by_source": {
+            "sales": 5,
+            "inventory": 122,
+            "complaints": 345,
+            "vendors": 19,
+            "finance": 4,
+        },
+    }
+
+    assert (
+        output_data["issues"][
+            "total_created"
+        ]
+        == 129
+    )
+
+    assert (
+        sum(
+            output_data["issues"][
+                "by_priority"
+            ].values()
+        )
+        == 129
+    )
+
+    assert (
+        output_data["evidence_records"][
+            "total"
+        ]
+        == 495
+    )
+
+    assert (
+        output_data[
+            "manager_priorities"
+        ]["requested_limit"]
+        == 15
+    )
+
+    assert (
+        output_data[
+            "manager_priorities"
+        ]["returned_count"]
+        == 15
+    )
+
+    assert (
+        len(
+            output_data[
+                "manager_priorities"
+            ]["items"]
+        )
+        == 15
+    )
+
+    assert (
+        output_data[
+            "executive_priorities"
+        ]["requested_limit"]
+        == 10
+    )
+
+    assert (
+        output_data[
+            "executive_priorities"
+        ]["returned_count"]
+        == 10
+    )
+
+    assert (
+        len(
+            output_data[
+                "executive_priorities"
+            ]["items"]
+        )
+        == 10
+    )
+
+
+@pytest.mark.integration
+def test_priority_agent_result_is_logged(
+    monkeypatch: Any,
+) -> None:
+    """A Priority Agent execution should be stored in agent_runs."""
+
+    configure_successful_priority_pipeline(
+        monkeypatch
+    )
+
+    agent_run_id: int | None = None
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="priority-logging-integration-test",
+        requested_by="pytest",
+        input_data={
+            "manager_limit": 2,
+            "executive_limit": 1,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            PriorityAgent(),
+        ],
+        run_logger=PostgresAgentRunLogger(
+            engine
+        ),
+    )
+
+    try:
+        result = asyncio.run(
+            orchestrator.run_agent(
+                "Priority Agent",
+                context,
+            )
+        )
+
+        agent_run_id = result.agent_run_id
+
+        assert (
+            result.execution_status
+            == AgentExecutionStatus.SUCCESS
+        )
+
+        assert result.log_persisted is True
+        assert result.logging_error is None
+        assert agent_run_id is not None
+
+        with engine.connect() as connection:
+            stored_record = connection.execute(
+                text(
+                    """
+                    SELECT
+                        agent_name,
+                        run_type,
+                        execution_status,
+                        input_summary,
+                        output_summary
+                    FROM agent_runs
+                    WHERE agent_run_id = :agent_run_id;
+                    """
+                ),
+                {
+                    "agent_run_id": agent_run_id,
+                },
+            ).mappings().one()
+
+        assert (
+            stored_record["agent_name"]
+            == "Priority Agent"
+        )
+
+        assert (
+            stored_record["run_type"]
+            == (
+                "priority-logging-"
+                "integration-test"
+            )
+        )
+
+        assert (
+            stored_record["execution_status"]
+            == "Success"
+        )
+
+        input_summary = json.loads(
+            stored_record[
+                "input_summary"
+            ]
+        )
+
+        output_summary = json.loads(
+            stored_record[
+                "output_summary"
+            ]
+        )
+
+        assert (
+            input_summary[
+                "input_data_keys"
+            ]
+            == [
+                "executive_limit",
+                "manager_limit",
+            ]
+        )
+
+        assert (
+            "Priority analysis consolidated"
+            in output_summary["summary"]
+        )
+
+    finally:
+        if agent_run_id is not None:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        DELETE FROM agent_runs
+                        WHERE agent_run_id = :agent_run_id;
+                        """
+                    ),
+                    {
+                        "agent_run_id": agent_run_id,
+                    },
+                )

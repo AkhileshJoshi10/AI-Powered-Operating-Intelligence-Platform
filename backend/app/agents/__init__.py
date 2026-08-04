@@ -8,7 +8,9 @@ from backend.app.agents.agent_run_logger import (
     PostgresAgentRunLogger,
 )
 from backend.app.agents.base_agent import BaseAgent
+from backend.app.agents.monitoring_agent import MonitoringAgent
 from backend.app.agents.orchestrator import AgentOrchestrator
+from backend.app.agents.priority_agent import PriorityAgent
 
 
 __all__ = [
@@ -18,5 +20,7 @@ __all__ = [
     "AgentResult",
     "AgentRunLogger",
     "BaseAgent",
+    "MonitoringAgent",
     "PostgresAgentRunLogger",
+    "PriorityAgent",
 ]

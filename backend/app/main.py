@@ -4,6 +4,9 @@ from backend.app.core.config import settings
 from backend.app.routers.analytics import (
     router as analytics_router,
 )
+from backend.app.routers.chief_of_staff import (
+    router as chief_of_staff_router,
+)
 from backend.app.routers.data_management import (
     router as data_management_router,
 )
@@ -33,8 +36,8 @@ app = FastAPI(
     description=(
         "Backend API for business KPIs, analytics, issues, "
         "root-cause analyses, recommendations, tasks, "
-        "data management, executive briefs, and "
-        "automation workflows."
+        "data management, executive briefs, complete "
+        "AI Chief of Staff workflows, and automation."
     ),
 )
 
@@ -47,3 +50,4 @@ app.include_router(task_router)
 app.include_router(analytics_router)
 app.include_router(data_management_router)
 app.include_router(executive_brief_router)
+app.include_router(chief_of_staff_router)

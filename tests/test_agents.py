@@ -3424,3 +3424,1142 @@ def test_root_cause_agent_result_is_logged(
                         "agent_run_id": agent_run_id,
                     },
                 )
+
+# -------------------------------------------------------------------------
+# Recommendation Agent tests
+# -------------------------------------------------------------------------
+
+import backend.app.agents.recommendation_agent as recommendation_module
+from backend.app.agents import RecommendationAgent
+
+
+def build_mock_recommendation_pipeline_data(
+) -> dict[str, Any]:
+    """Build controlled Recommendation Agent pipeline data."""
+
+    priority_reference = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "executive_rank": 1,
+                "executive_score": 130.0,
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+                "executive_rank": 2,
+                "executive_score": 115.0,
+            },
+        ]
+    )
+
+    recommendation_context = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+            },
+        ]
+    )
+
+    recommendations = pd.DataFrame(
+        [
+            {
+                "executive_rank": 1,
+                "issue_id": "ISSUE-HIGH-001",
+                "recommendation_title": (
+                    "Restore product availability"
+                ),
+                "suggested_owner_role": (
+                    "Inventory Manager"
+                ),
+                "suggested_deadline": "2026-08-07",
+                "expected_impact": (
+                    "Reduce stockout exposure."
+                ),
+                "confidence_score": 82.0,
+                "status": "Pending Review",
+                "generated_at": pd.Timestamp(
+                    "2026-08-04T10:00:00"
+                ),
+            },
+            {
+                "executive_rank": 2,
+                "issue_id": "ISSUE-HIGH-002",
+                "recommendation_title": (
+                    "Correct vendor delivery performance"
+                ),
+                "suggested_owner_role": (
+                    "Procurement Manager"
+                ),
+                "suggested_deadline": "2026-08-09",
+                "expected_impact": (
+                    "Improve delivery reliability."
+                ),
+                "confidence_score": 74.0,
+                "status": "Pending Review",
+                "generated_at": pd.Timestamp(
+                    "2026-08-04T10:00:00"
+                ),
+            },
+        ]
+    )
+
+    database_records = [
+        {
+            "issue_id": "ISSUE-HIGH-001",
+        },
+        {
+            "issue_id": "ISSUE-HIGH-002",
+        },
+    ]
+
+    return {
+        "priority_reference": priority_reference,
+        "recommendation_context": (
+            recommendation_context
+        ),
+        "recommendations": recommendations,
+        "database_records": database_records,
+        "inserted_count": 2,
+        "preserved_count": 0,
+        "persistence_calls": [],
+    }
+
+
+def configure_successful_recommendation_pipeline(
+    monkeypatch: Any,
+    *,
+    patch_recommendation_reference: bool = True,
+) -> dict[str, Any]:
+    """Configure Recommendation Agent dependencies to succeed."""
+
+    pipeline_data = (
+        build_mock_recommendation_pipeline_data()
+    )
+
+    if patch_recommendation_reference:
+        monkeypatch.setattr(
+            recommendation_module,
+            "build_recommendation_reference",
+            lambda **_: (
+                pipeline_data[
+                    "priority_reference"
+                ].copy(),
+                "Root-Cause Agent output",
+            ),
+        )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "load_recommendation_context",
+        lambda database_engine, priority_reference: (
+            pipeline_data[
+                "recommendation_context"
+            ].copy()
+        ),
+    )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "build_recommendations",
+        lambda recommendation_context: (
+            pipeline_data[
+                "recommendations"
+            ].copy(),
+            list(
+                pipeline_data[
+                    "database_records"
+                ]
+            ),
+        ),
+    )
+
+    def fake_save_recommendations_to_database(
+        database_engine: Any,
+        database_records: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        pipeline_data[
+            "persistence_calls"
+        ].append(
+            {
+                "engine": database_engine,
+                "record_count": len(
+                    database_records
+                ),
+            }
+        )
+
+        return (
+            int(
+                pipeline_data[
+                    "inserted_count"
+                ]
+            ),
+            int(
+                pipeline_data[
+                    "preserved_count"
+                ]
+            ),
+        )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "save_recommendations_to_database",
+        fake_save_recommendations_to_database,
+    )
+
+    return pipeline_data
+
+
+def test_recommendation_agent_returns_complete_result(
+    monkeypatch: Any,
+) -> None:
+    """The agent should return structured recommendation output."""
+
+    pipeline_data = (
+        configure_successful_recommendation_pipeline(
+            monkeypatch
+        )
+    )
+
+    context = AgentContext(
+        run_type="recommendation-unit-test",
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert result.used_fallback is False
+
+    output_data = result.output_data
+
+    assert (
+        output_data["recommendation_status"]
+        == "Complete"
+    )
+
+    assert output_data["selection"] == {
+        "source": "Root-Cause Agent output",
+        "requested_limit": 2,
+        "selected_issue_count": 2,
+        "eligible_issue_count": 2,
+        "issue_ids": [
+            "ISSUE-HIGH-001",
+            "ISSUE-HIGH-002",
+        ],
+        "unavailable_issue_ids": [],
+    }
+
+    assert output_data["generation"] == {
+        "generated_count": 2,
+        "generation_method": (
+            "Rule-Based Root-Cause and "
+            "Issue Analysis"
+        ),
+        "confidence": {
+            "average": 78.0,
+            "minimum": 74.0,
+            "maximum": 82.0,
+        },
+        "initial_review_status": (
+            "Pending Review"
+        ),
+    }
+
+    assert output_data["database"] == {
+        "persisted": True,
+        "table": "recommendations",
+        "inserted_or_refreshed_count": 2,
+        "reviewed_recommendations_preserved": 0,
+    }
+
+    assert output_data["human_review"] == {
+        "required": True,
+        "allowed_actions": [
+            "Accept",
+            "Edit",
+            "Reject",
+        ],
+    }
+
+    assert len(
+        output_data["recommendations"]
+    ) == 2
+
+    assert (
+        output_data["recommendations"][0][
+            "generated_at"
+        ]
+        == "2026-08-04T10:00:00"
+    )
+
+    assert (
+        "2 proposed management actions"
+        in result.summary
+    )
+
+    persistence_calls = pipeline_data[
+        "persistence_calls"
+    ]
+
+    assert len(
+        persistence_calls
+    ) == 1
+
+    assert (
+        persistence_calls[0]["engine"]
+        is recommendation_module.engine
+    )
+
+    assert (
+        persistence_calls[0][
+            "record_count"
+        ]
+        == 2
+    )
+
+
+def test_recommendation_agent_returns_partial_result(
+    monkeypatch: Any,
+) -> None:
+    """Missing root-cause context should produce Partial status."""
+
+    pipeline_data = (
+        configure_successful_recommendation_pipeline(
+            monkeypatch
+        )
+    )
+
+    pipeline_data[
+        "recommendation_context"
+    ] = pipeline_data[
+        "recommendation_context"
+    ].head(1).copy()
+
+    pipeline_data[
+        "recommendations"
+    ] = pipeline_data[
+        "recommendations"
+    ].head(1).copy()
+
+    pipeline_data[
+        "database_records"
+    ] = pipeline_data[
+        "database_records"
+    ][:1]
+
+    pipeline_data[
+        "inserted_count"
+    ] = 1
+
+    context = AgentContext(
+        run_type="partial-recommendation-test",
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    output_data = result.output_data
+
+    assert (
+        output_data["recommendation_status"]
+        == "Partial"
+    )
+
+    assert (
+        output_data["selection"][
+            "selected_issue_count"
+        ]
+        == 2
+    )
+
+    assert (
+        output_data["selection"][
+            "eligible_issue_count"
+        ]
+        == 1
+    )
+
+    assert (
+        output_data["selection"][
+            "unavailable_issue_ids"
+        ]
+        == [
+            "ISSUE-HIGH-002",
+        ]
+    )
+
+    assert (
+        output_data["generation"][
+            "generated_count"
+        ]
+        == 1
+    )
+
+    assert (
+        "1 selected issues did not have an "
+        "eligible root-cause analysis"
+        in result.summary
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "invalid_limit",
+        "expected_error",
+    ),
+    [
+        pytest.param(
+            0,
+            (
+                "recommendation_limit must be "
+                "at least 1."
+            ),
+            id="below-minimum",
+        ),
+        pytest.param(
+            51,
+            (
+                "recommendation_limit cannot be "
+                "greater than 50."
+            ),
+            id="above-maximum",
+        ),
+        pytest.param(
+            True,
+            (
+                "recommendation_limit must be "
+                "an integer."
+            ),
+            id="boolean-value",
+        ),
+        pytest.param(
+            "invalid",
+            (
+                "recommendation_limit must be "
+                "an integer."
+            ),
+            id="non-integer-text",
+        ),
+    ],
+)
+def test_recommendation_agent_rejects_invalid_limit(
+    invalid_limit: object,
+    expected_error: str,
+) -> None:
+    """Recommendation limit must remain between 1 and 50."""
+
+    context = AgentContext(
+        run_type="invalid-recommendation-limit-test",
+        input_data={
+            "recommendation_limit": invalid_limit,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+    assert (
+        result.error_message
+        == expected_error
+    )
+
+
+def test_recommendation_agent_uses_requested_issue_ids(
+    monkeypatch: Any,
+) -> None:
+    """Explicit issue IDs should override sequence references."""
+
+    captured_arguments: dict[str, Any] = {}
+
+    requested_reference = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-002",
+                "executive_rank": 1,
+                "executive_score": 115.0,
+            },
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "executive_rank": 2,
+                "executive_score": 130.0,
+            },
+        ]
+    )
+
+    def fake_build_requested_issue_reference(
+        *,
+        issue_ids: list[str],
+        analysis_limit: int,
+    ) -> pd.DataFrame:
+        captured_arguments[
+            "issue_ids"
+        ] = list(issue_ids)
+
+        captured_arguments[
+            "analysis_limit"
+        ] = analysis_limit
+
+        return requested_reference.copy()
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "build_requested_issue_reference",
+        fake_build_requested_issue_reference,
+    )
+
+    context = AgentContext(
+        run_type="requested-recommendation-test",
+        issue_ids=[
+            "ISSUE-HIGH-002",
+            "ISSUE-HIGH-001",
+        ],
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    priority_reference, selection_source = (
+        recommendation_module
+        .build_recommendation_reference(
+            context=context,
+            recommendation_limit=2,
+        )
+    )
+
+    assert (
+        selection_source
+        == "Requested issue IDs"
+    )
+
+    assert captured_arguments == {
+        "issue_ids": [
+            "ISSUE-HIGH-002",
+            "ISSUE-HIGH-001",
+        ],
+        "analysis_limit": 2,
+    }
+
+    assert (
+        priority_reference[
+            "issue_id"
+        ].tolist()
+        == [
+            "ISSUE-HIGH-002",
+            "ISSUE-HIGH-001",
+        ]
+    )
+
+
+def test_recommendation_agent_fails_without_eligible_root_causes(
+    monkeypatch: Any,
+) -> None:
+    """The agent should fail when no root causes are eligible."""
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "build_recommendation_reference",
+        lambda **_: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                        "executive_rank": 1,
+                        "executive_score": 130.0,
+                    },
+                ]
+            ),
+            "Current executive ranking",
+        ),
+    )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "load_recommendation_context",
+        lambda database_engine, priority_reference: (
+            pd.DataFrame()
+        ),
+    )
+
+    context = AgentContext(
+        run_type="empty-recommendation-context-test",
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == (
+            "No eligible root-cause analyses matched "
+            "the selected issues. Run the "
+            "Root-Cause Agent first."
+        )
+    )
+
+
+def test_recommendation_agent_fails_when_no_recommendations_are_generated(
+    monkeypatch: Any,
+) -> None:
+    """An empty recommendation output should cause failure."""
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "build_recommendation_reference",
+        lambda **_: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                        "executive_rank": 1,
+                        "executive_score": 130.0,
+                    },
+                ]
+            ),
+            "Current executive ranking",
+        ),
+    )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "load_recommendation_context",
+        lambda database_engine, priority_reference: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                    },
+                ]
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "build_recommendations",
+        lambda recommendation_context: (
+            pd.DataFrame(),
+            [],
+        ),
+    )
+
+    context = AgentContext(
+        run_type="empty-recommendation-output-test",
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == "No recommendations were generated."
+    )
+
+
+def test_recommendation_agent_reports_reviewed_preservation(
+    monkeypatch: Any,
+) -> None:
+    """Reviewed recommendation counts should be preserved in output."""
+
+    pipeline_data = (
+        configure_successful_recommendation_pipeline(
+            monkeypatch
+        )
+    )
+
+    pipeline_data[
+        "inserted_count"
+    ] = 1
+
+    pipeline_data[
+        "preserved_count"
+    ] = 1
+
+    context = AgentContext(
+        run_type="preserved-recommendation-test",
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        result.output_data["database"][
+            "inserted_or_refreshed_count"
+        ]
+        == 1
+    )
+
+    assert (
+        result.output_data["database"][
+            "reviewed_recommendations_preserved"
+        ]
+        == 1
+    )
+
+    assert (
+        "1 reviewed recommendations were preserved"
+        in result.summary
+    )
+
+
+class SequenceRootCauseAgent(
+    BaseAgent
+):
+    """Root-cause stub used for recommendation sequence testing."""
+
+    name = "Root-Cause Agent"
+
+    description = (
+        "Returns controlled root-cause analyses "
+        "for sequence testing."
+    )
+
+    async def run(
+        self,
+        context: AgentContext,
+    ) -> dict[str, Any]:
+        del context
+
+        return {
+            "summary": (
+                "Controlled root-cause analysis completed."
+            ),
+            "analyses": [
+                {
+                    "issue_id": "ISSUE-HIGH-001",
+                    "executive_rank": 1,
+                    "executive_score": 130.0,
+                },
+                {
+                    "issue_id": "ISSUE-HIGH-002",
+                    "executive_rank": 2,
+                    "executive_score": 115.0,
+                },
+            ],
+        }
+
+
+def test_root_cause_and_recommendation_sequence_shares_issues(
+    monkeypatch: Any,
+) -> None:
+    """Recommendation Agent should use prior root-cause analyses."""
+
+    configure_successful_recommendation_pipeline(
+        monkeypatch,
+        patch_recommendation_reference=False,
+    )
+
+    context = AgentContext(
+        run_type="root-cause-recommendation-sequence-test",
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            SequenceRootCauseAgent(),
+            RecommendationAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Root-Cause Agent",
+                "Recommendation Agent",
+            ],
+            context=context,
+        )
+    )
+
+    assert len(results) == 2
+
+    assert (
+        results[0].execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        results[1].execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert results[1].output_data[
+        "selection"
+    ] == {
+        "source": "Root-Cause Agent output",
+        "requested_limit": 2,
+        "selected_issue_count": 2,
+        "eligible_issue_count": 2,
+        "issue_ids": [
+            "ISSUE-HIGH-001",
+            "ISSUE-HIGH-002",
+        ],
+        "unavailable_issue_ids": [],
+    }
+
+
+@pytest.mark.integration
+def test_recommendation_agent_with_seeded_test_database(
+) -> None:
+    """The real sequence should generate seeded recommendations."""
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="recommendation-integration-test",
+        requested_by="pytest",
+        input_data={
+            "manager_limit": 15,
+            "executive_limit": 10,
+            "analysis_limit": 10,
+            "recommendation_limit": 10,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            PriorityAgent(),
+            RootCauseAgent(),
+            RecommendationAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Priority Agent",
+                "Root-Cause Agent",
+                "Recommendation Agent",
+            ],
+            context=context,
+            stop_on_failure=True,
+        )
+    )
+
+    assert len(results) == 3
+
+    assert all(
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+        for result in results
+    )
+
+    output_data = results[-1].output_data
+
+    assert (
+        output_data["recommendation_status"]
+        == "Complete"
+    )
+
+    assert (
+        output_data["selection"]["source"]
+        == "Root-Cause Agent output"
+    )
+
+    assert (
+        output_data["selection"][
+            "selected_issue_count"
+        ]
+        == 10
+    )
+
+    assert (
+        output_data["selection"][
+            "eligible_issue_count"
+        ]
+        == 10
+    )
+
+    assert (
+        output_data["selection"][
+            "unavailable_issue_ids"
+        ]
+        == []
+    )
+
+    assert (
+        output_data["generation"][
+            "generated_count"
+        ]
+        == 10
+    )
+
+    confidence = output_data[
+        "generation"
+    ]["confidence"]
+
+    assert (
+        0.0
+        < confidence["minimum"]
+        <= confidence["average"]
+        <= confidence["maximum"]
+        <= 100.0
+    )
+
+    assert (
+        output_data["database"]["persisted"]
+        is True
+    )
+
+    assert (
+        output_data["database"][
+            "inserted_or_refreshed_count"
+        ]
+        + output_data["database"][
+            "reviewed_recommendations_preserved"
+        ]
+        == 10
+    )
+
+    assert (
+        output_data["human_review"]["required"]
+        is True
+    )
+
+    selected_issue_ids = output_data[
+        "selection"
+    ]["issue_ids"]
+
+    assert (
+        "ISSUE-PRODUCT-AVAILABILITY-RISK-S003-P017"
+        in selected_issue_ids
+    )
+
+    with engine.connect() as connection:
+        stored_rows = connection.execute(
+            text(
+                """
+                SELECT DISTINCT
+                    issue_id
+                FROM recommendations
+                WHERE issue_id = ANY(:issue_ids);
+                """
+            ),
+            {
+                "issue_ids": selected_issue_ids,
+            },
+        ).scalars().all()
+
+    assert set(
+        stored_rows
+    ) == set(
+        selected_issue_ids
+    )
+
+
+@pytest.mark.integration
+def test_recommendation_agent_result_is_logged(
+    monkeypatch: Any,
+) -> None:
+    """A Recommendation Agent run should be stored in agent_runs."""
+
+    configure_successful_recommendation_pipeline(
+        monkeypatch
+    )
+
+    agent_run_id: int | None = None
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="recommendation-logging-integration-test",
+        requested_by="pytest",
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            RecommendationAgent(),
+        ],
+        run_logger=PostgresAgentRunLogger(
+            engine
+        ),
+    )
+
+    try:
+        result = asyncio.run(
+            orchestrator.run_agent(
+                "Recommendation Agent",
+                context,
+            )
+        )
+
+        agent_run_id = result.agent_run_id
+
+        assert (
+            result.execution_status
+            == AgentExecutionStatus.SUCCESS
+        )
+
+        assert result.log_persisted is True
+        assert result.logging_error is None
+        assert agent_run_id is not None
+
+        with engine.connect() as connection:
+            stored_record = connection.execute(
+                text(
+                    """
+                    SELECT
+                        agent_name,
+                        run_type,
+                        execution_status,
+                        input_summary,
+                        output_summary
+                    FROM agent_runs
+                    WHERE agent_run_id = :agent_run_id;
+                    """
+                ),
+                {
+                    "agent_run_id": agent_run_id,
+                },
+            ).mappings().one()
+
+        assert (
+            stored_record["agent_name"]
+            == "Recommendation Agent"
+        )
+
+        assert (
+            stored_record["run_type"]
+            == (
+                "recommendation-logging-"
+                "integration-test"
+            )
+        )
+
+        assert (
+            stored_record[
+                "execution_status"
+            ]
+            == "Success"
+        )
+
+        input_summary = json.loads(
+            stored_record[
+                "input_summary"
+            ]
+        )
+
+        output_summary = json.loads(
+            stored_record[
+                "output_summary"
+            ]
+        )
+
+        assert (
+            input_summary[
+                "input_data_keys"
+            ]
+            == [
+                "recommendation_limit",
+            ]
+        )
+
+        assert (
+            "Recommendation generation created"
+            in output_summary["summary"]
+        )
+
+    finally:
+        if agent_run_id is not None:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        DELETE FROM agent_runs
+                        WHERE agent_run_id = :agent_run_id;
+                        """
+                    ),
+                    {
+                        "agent_run_id": agent_run_id,
+                    },
+                )

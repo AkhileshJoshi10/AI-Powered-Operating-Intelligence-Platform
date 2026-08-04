@@ -11,6 +11,7 @@ from backend.app.agents.base_agent import BaseAgent
 from backend.app.agents.monitoring_agent import MonitoringAgent
 from backend.app.agents.orchestrator import AgentOrchestrator
 from backend.app.agents.priority_agent import PriorityAgent
+from backend.app.agents.root_cause_agent import RootCauseAgent
 
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "MonitoringAgent",
     "PostgresAgentRunLogger",
     "PriorityAgent",
+    "RootCauseAgent",
 ]

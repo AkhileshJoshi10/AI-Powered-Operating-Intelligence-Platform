@@ -2254,3 +2254,1173 @@ def test_priority_agent_result_is_logged(
                         "agent_run_id": agent_run_id,
                     },
                 )
+
+
+# -------------------------------------------------------------------------
+# Root-Cause Agent tests
+# -------------------------------------------------------------------------
+
+import backend.app.agents.root_cause_agent as root_cause_module
+from backend.app.agents import RootCauseAgent
+
+
+def build_mock_root_cause_pipeline_data(
+) -> dict[str, Any]:
+    """Build controlled Root-Cause Agent pipeline data."""
+
+    priority_reference = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "executive_rank": 1,
+                "executive_score": 130.0,
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+                "executive_rank": 2,
+                "executive_score": 115.0,
+            },
+        ]
+    )
+
+    selected_issues = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+            },
+        ]
+    )
+
+    selected_evidence = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "source_finding_id": "FINDING-001",
+            },
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "source_finding_id": "FINDING-002",
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+                "source_finding_id": "FINDING-003",
+            },
+        ]
+    )
+
+    analyses = pd.DataFrame(
+        [
+            {
+                "analysis_id": "RCA-ISSUE-HIGH-001",
+                "executive_rank": 1,
+                "issue_id": "ISSUE-HIGH-001",
+                "root_cause_category": (
+                    "Inventory Replenishment and Supply Risk"
+                ),
+                "confidence_score": 82.0,
+                "evidence_count": 2,
+                "generated_at": pd.Timestamp(
+                    "2026-08-04T09:00:00"
+                ),
+            },
+            {
+                "analysis_id": "RCA-ISSUE-HIGH-002",
+                "executive_rank": 2,
+                "issue_id": "ISSUE-HIGH-002",
+                "root_cause_category": (
+                    "Vendor Reliability and Fulfilment Risk"
+                ),
+                "confidence_score": 74.0,
+                "evidence_count": 1,
+                "generated_at": pd.Timestamp(
+                    "2026-08-04T09:00:00"
+                ),
+            },
+        ]
+    )
+
+    database_records = [
+        {
+            "issue_id": "ISSUE-HIGH-001",
+        },
+        {
+            "issue_id": "ISSUE-HIGH-002",
+        },
+    ]
+
+    return {
+        "priority_reference": priority_reference,
+        "selected_issues": selected_issues,
+        "selected_evidence": selected_evidence,
+        "analyses": analyses,
+        "database_records": database_records,
+        "persistence_calls": [],
+    }
+
+
+def configure_successful_root_cause_pipeline(
+    monkeypatch: Any,
+    *,
+    patch_priority_reference: bool = True,
+) -> dict[str, Any]:
+    """Configure Root-Cause Agent dependencies to succeed."""
+
+    pipeline_data = (
+        build_mock_root_cause_pipeline_data()
+    )
+
+    if patch_priority_reference:
+        monkeypatch.setattr(
+            root_cause_module,
+            "build_priority_reference",
+            lambda **_: (
+                pipeline_data[
+                    "priority_reference"
+                ].copy(),
+                "Priority Agent output",
+            ),
+        )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_selected_issues",
+        lambda database_engine, priority_reference: (
+            pipeline_data[
+                "selected_issues"
+            ].copy()
+        ),
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_selected_evidence",
+        lambda database_engine, issue_ids: (
+            pipeline_data[
+                "selected_evidence"
+            ].copy()
+        ),
+    )
+
+    def fake_build_root_cause_outputs(
+        database_engine: Any,
+        selected_issues: pd.DataFrame,
+        selected_evidence: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+        del database_engine
+        del selected_issues
+        del selected_evidence
+
+        return (
+            pipeline_data[
+                "analyses"
+            ].copy(),
+            list(
+                pipeline_data[
+                    "database_records"
+                ]
+            ),
+        )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "build_root_cause_outputs",
+        fake_build_root_cause_outputs,
+    )
+
+    def fake_save_root_causes_to_database(
+        database_engine: Any,
+        database_records: list[dict[str, Any]],
+    ) -> None:
+        pipeline_data[
+            "persistence_calls"
+        ].append(
+            {
+                "engine": database_engine,
+                "record_count": len(
+                    database_records
+                ),
+            }
+        )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "save_root_causes_to_database",
+        fake_save_root_causes_to_database,
+    )
+
+    return pipeline_data
+
+
+def test_root_cause_agent_returns_complete_result(
+    monkeypatch: Any,
+) -> None:
+    """The agent should return structured root-cause output."""
+
+    pipeline_data = (
+        configure_successful_root_cause_pipeline(
+            monkeypatch
+        )
+    )
+
+    context = AgentContext(
+        run_type="root-cause-unit-test",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert result.used_fallback is False
+
+    output_data = result.output_data
+
+    assert (
+        output_data["root_cause_status"]
+        == "Complete"
+    )
+
+    assert output_data["selection"] == {
+        "source": "Priority Agent output",
+        "requested_limit": 2,
+        "selected_issue_count": 2,
+        "issue_ids": [
+            "ISSUE-HIGH-001",
+            "ISSUE-HIGH-002",
+        ],
+    }
+
+    assert output_data["analysis"] == {
+        "generated_count": 2,
+        "analysis_method": (
+            "Rule-Based Database and "
+            "Evidence Analysis"
+        ),
+        "technical_review_required_count": 0,
+        "zero_evidence_count": 0,
+        "confidence": {
+            "average": 78.0,
+            "minimum": 74.0,
+            "maximum": 82.0,
+        },
+    }
+
+    assert output_data["evidence"] == {
+        "selected_evidence_records": 3,
+        "evidence_records_used": 3,
+    }
+
+    assert output_data["database"] == {
+        "persisted": True,
+        "table": "root_cause_analyses",
+        "review_status": "Pending Review",
+    }
+
+    assert len(
+        output_data["analyses"]
+    ) == 2
+
+    assert (
+        output_data["analyses"][0][
+            "generated_at"
+        ]
+        == "2026-08-04T09:00:00"
+    )
+
+    assert (
+        "2 evidence-based assessments"
+        in result.summary
+    )
+
+    persistence_calls = pipeline_data[
+        "persistence_calls"
+    ]
+
+    assert len(
+        persistence_calls
+    ) == 1
+
+    assert (
+        persistence_calls[0]["engine"]
+        is root_cause_module.engine
+    )
+
+    assert (
+        persistence_calls[0][
+            "record_count"
+        ]
+        == 2
+    )
+
+
+def test_root_cause_agent_returns_partial_status_for_technical_review(
+    monkeypatch: Any,
+) -> None:
+    """Technical-review analyses should produce Partial status."""
+
+    pipeline_data = (
+        configure_successful_root_cause_pipeline(
+            monkeypatch
+        )
+    )
+
+    pipeline_data["analyses"].loc[
+        1,
+        "root_cause_category",
+    ] = "Technical Review Required"
+
+    context = AgentContext(
+        run_type="partial-root-cause-test",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        result.output_data[
+            "root_cause_status"
+        ]
+        == "Partial"
+    )
+
+    assert (
+        result.output_data["analysis"][
+            "technical_review_required_count"
+        ]
+        == 1
+    )
+
+    assert (
+        "1 assessments require technical review"
+        in result.summary
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "invalid_limit",
+        "expected_error",
+    ),
+    [
+        pytest.param(
+            0,
+            "analysis_limit must be at least 1.",
+            id="below-minimum",
+        ),
+        pytest.param(
+            51,
+            (
+                "analysis_limit cannot be greater "
+                "than 50."
+            ),
+            id="above-maximum",
+        ),
+        pytest.param(
+            True,
+            "analysis_limit must be an integer.",
+            id="boolean-value",
+        ),
+        pytest.param(
+            "invalid",
+            "analysis_limit must be an integer.",
+            id="non-integer-text",
+        ),
+    ],
+)
+def test_root_cause_agent_rejects_invalid_analysis_limit(
+    invalid_limit: object,
+    expected_error: str,
+) -> None:
+    """Analysis limit must remain between 1 and 50."""
+
+    context = AgentContext(
+        run_type="invalid-root-cause-limit-test",
+        input_data={
+            "analysis_limit": invalid_limit,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+    assert (
+        result.error_message
+        == expected_error
+    )
+
+
+def test_root_cause_agent_preserves_requested_issue_order(
+    monkeypatch: Any,
+) -> None:
+    """Explicit issue IDs should be selected in caller order."""
+
+    active_issues = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+                "priority_score": 95.0,
+                "critical_evidence_score": 25.0,
+            },
+            {
+                "issue_id": "ISSUE-HIGH-002",
+                "priority_score": 85.0,
+                "critical_evidence_score": 20.0,
+            },
+        ]
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_active_issues",
+        lambda database_engine: (
+            active_issues.copy()
+        ),
+    )
+
+    context = AgentContext(
+        run_type="requested-root-cause-test",
+        issue_ids=[
+            "ISSUE-HIGH-002",
+            "ISSUE-HIGH-001",
+        ],
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    priority_reference, selection_source = (
+        root_cause_module.build_priority_reference(
+            context=context,
+            analysis_limit=2,
+        )
+    )
+
+    assert (
+        selection_source
+        == "Requested issue IDs"
+    )
+
+    assert (
+        priority_reference[
+            "issue_id"
+        ].tolist()
+        == [
+            "ISSUE-HIGH-002",
+            "ISSUE-HIGH-001",
+        ]
+    )
+
+    assert (
+        priority_reference[
+            "executive_rank"
+        ].tolist()
+        == [
+            1,
+            2,
+        ]
+    )
+
+    assert (
+        priority_reference[
+            "executive_score"
+        ].tolist()
+        == [
+            105.0,
+            120.0,
+        ]
+    )
+
+
+def test_root_cause_agent_rejects_unknown_requested_issue(
+    monkeypatch: Any,
+) -> None:
+    """Unknown issue IDs should not be analyzed."""
+
+    active_issues = pd.DataFrame(
+        [
+            {
+                "issue_id": "ISSUE-HIGH-001",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_active_issues",
+        lambda database_engine: (
+            active_issues.copy()
+        ),
+    )
+
+    context = AgentContext(
+        run_type="unknown-root-cause-issue-test",
+        issue_ids=[
+            "ISSUE-UNKNOWN-001",
+        ],
+        input_data={
+            "analysis_limit": 1,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+    assert (
+        result.error_message
+        == (
+            "Requested issues were not found in "
+            "the active issue register: "
+            "ISSUE-UNKNOWN-001"
+        )
+    )
+
+
+def test_root_cause_agent_rejects_more_issue_ids_than_limit(
+) -> None:
+    """Explicit issue count cannot exceed analysis limit."""
+
+    context = AgentContext(
+        run_type="root-cause-request-limit-test",
+        issue_ids=[
+            "ISSUE-HIGH-001",
+            "ISSUE-HIGH-002",
+        ],
+        input_data={
+            "analysis_limit": 1,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "ValueError"
+
+    assert (
+        result.error_message
+        == (
+            "2 issue IDs were requested, but "
+            "analysis_limit is 1."
+        )
+    )
+
+
+def test_root_cause_agent_fails_when_selected_issues_are_empty(
+    monkeypatch: Any,
+) -> None:
+    """The agent should fail when selected issues cannot be loaded."""
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "build_priority_reference",
+        lambda **_: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                        "executive_rank": 1,
+                        "executive_score": 120.0,
+                    },
+                ]
+            ),
+            "Current executive ranking",
+        ),
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_selected_issues",
+        lambda database_engine, priority_reference: (
+            pd.DataFrame()
+        ),
+    )
+
+    context = AgentContext(
+        run_type="empty-selected-issues-test",
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == (
+            "No active issues matched the selected "
+            "root-cause analysis reference."
+        )
+    )
+
+
+def test_root_cause_agent_fails_when_no_analyses_are_generated(
+    monkeypatch: Any,
+) -> None:
+    """An empty analysis result should cause controlled failure."""
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "build_priority_reference",
+        lambda **_: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                        "executive_rank": 1,
+                        "executive_score": 120.0,
+                    },
+                ]
+            ),
+            "Current executive ranking",
+        ),
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_selected_issues",
+        lambda database_engine, priority_reference: (
+            pd.DataFrame(
+                [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                    },
+                ]
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "load_selected_evidence",
+        lambda database_engine, issue_ids: (
+            pd.DataFrame()
+        ),
+    )
+
+    def return_empty_root_cause_output(
+        database_engine: Any,
+        selected_issues: pd.DataFrame,
+        selected_evidence: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+        del database_engine
+        del selected_issues
+        del selected_evidence
+
+        return pd.DataFrame(), []
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "build_root_cause_outputs",
+        return_empty_root_cause_output,
+    )
+
+    context = AgentContext(
+        run_type="empty-root-cause-output-test",
+    )
+
+    result = asyncio.run(
+        RootCauseAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert result.error_type == "RuntimeError"
+
+    assert (
+        result.error_message
+        == (
+            "No root-cause analyses were generated."
+        )
+    )
+
+
+class SequencePriorityAgent(
+    BaseAgent
+):
+    """Priority stub used for Root-Cause Agent sequence testing."""
+
+    name = "Priority Agent"
+
+    description = (
+        "Returns controlled executive priorities "
+        "for sequence testing."
+    )
+
+    async def run(
+        self,
+        context: AgentContext,
+    ) -> dict[str, Any]:
+        del context
+
+        return {
+            "summary": (
+                "Controlled priority analysis completed."
+            ),
+            "executive_priorities": {
+                "items": [
+                    {
+                        "issue_id": "ISSUE-HIGH-001",
+                        "executive_rank": 1,
+                        "executive_score": 130.0,
+                    },
+                    {
+                        "issue_id": "ISSUE-HIGH-002",
+                        "executive_rank": 2,
+                        "executive_score": 115.0,
+                    },
+                ],
+            },
+        }
+
+
+def test_priority_and_root_cause_sequence_shares_priorities(
+    monkeypatch: Any,
+) -> None:
+    """Root-Cause Agent should use prior executive selections."""
+
+    configure_successful_root_cause_pipeline(
+        monkeypatch,
+        patch_priority_reference=False,
+    )
+
+    context = AgentContext(
+        run_type="priority-root-cause-sequence-test",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            SequencePriorityAgent(),
+            RootCauseAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Priority Agent",
+                "Root-Cause Agent",
+            ],
+            context=context,
+        )
+    )
+
+    assert len(results) == 2
+
+    assert (
+        results[0].execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        results[1].execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert results[1].output_data[
+        "selection"
+    ] == {
+        "source": "Priority Agent output",
+        "requested_limit": 2,
+        "selected_issue_count": 2,
+        "issue_ids": [
+            "ISSUE-HIGH-001",
+            "ISSUE-HIGH-002",
+        ],
+    }
+
+
+@pytest.mark.integration
+def test_root_cause_agent_with_seeded_test_database(
+) -> None:
+    """The real sequence should analyze seeded executive issues."""
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="root-cause-integration-test",
+        requested_by="pytest",
+        input_data={
+            "manager_limit": 15,
+            "executive_limit": 10,
+            "analysis_limit": 10,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            PriorityAgent(),
+            RootCauseAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Priority Agent",
+                "Root-Cause Agent",
+            ],
+            context=context,
+        )
+    )
+
+    assert len(results) == 2
+
+    priority_result = results[0]
+    root_cause_result = results[1]
+
+    assert (
+        priority_result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert (
+        root_cause_result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    output_data = (
+        root_cause_result.output_data
+    )
+
+    assert (
+        output_data["root_cause_status"]
+        == "Complete"
+    )
+
+    assert (
+        output_data["selection"]["source"]
+        == "Priority Agent output"
+    )
+
+    assert (
+        output_data["selection"][
+            "selected_issue_count"
+        ]
+        == 10
+    )
+
+    assert (
+        output_data["analysis"][
+            "generated_count"
+        ]
+        == 10
+    )
+
+    assert (
+        output_data["analysis"][
+            "technical_review_required_count"
+        ]
+        == 0
+    )
+
+    assert (
+        output_data["analysis"][
+            "zero_evidence_count"
+        ]
+        == 0
+    )
+
+    confidence = output_data[
+        "analysis"
+    ]["confidence"]
+
+    assert (
+        0.0
+        < confidence["minimum"]
+        <= confidence["average"]
+        <= confidence["maximum"]
+        <= 100.0
+    )
+
+    assert (
+        output_data["evidence"][
+            "evidence_records_used"
+        ]
+        > 0
+    )
+
+    assert (
+        output_data["database"]["persisted"]
+        is True
+    )
+
+    selected_issue_ids = output_data[
+        "selection"
+    ]["issue_ids"]
+
+    assert (
+        "ISSUE-PRODUCT-AVAILABILITY-RISK-S003-P017"
+        in selected_issue_ids
+    )
+
+    with engine.connect() as connection:
+        stored_rows = connection.execute(
+            text(
+                """
+                SELECT
+                    issue_id,
+                    confidence_score,
+                    evidence_count,
+                    analysis_status,
+                    review_status
+                FROM root_cause_analyses;
+                """
+            )
+        ).mappings().all()
+
+    stored_by_issue_id = {
+        row["issue_id"]: row
+        for row in stored_rows
+    }
+
+    for issue_id in selected_issue_ids:
+        assert issue_id in stored_by_issue_id
+
+        stored_record = stored_by_issue_id[
+            issue_id
+        ]
+
+        assert (
+            stored_record[
+                "confidence_score"
+            ]
+            is not None
+        )
+
+        assert (
+            stored_record[
+                "evidence_count"
+            ]
+            > 0
+        )
+
+        assert (
+            stored_record[
+                "analysis_status"
+            ]
+            == "Generated"
+        )
+
+        assert (
+            stored_record[
+                "review_status"
+            ]
+            == "Pending Review"
+        )
+
+
+@pytest.mark.integration
+def test_root_cause_agent_result_is_logged(
+    monkeypatch: Any,
+) -> None:
+    """A Root-Cause Agent execution should be stored in agent_runs."""
+
+    configure_successful_root_cause_pipeline(
+        monkeypatch
+    )
+
+    agent_run_id: int | None = None
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type="root-cause-logging-integration-test",
+        requested_by="pytest",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            RootCauseAgent(),
+        ],
+        run_logger=PostgresAgentRunLogger(
+            engine
+        ),
+    )
+
+    try:
+        result = asyncio.run(
+            orchestrator.run_agent(
+                "Root-Cause Agent",
+                context,
+            )
+        )
+
+        agent_run_id = result.agent_run_id
+
+        assert (
+            result.execution_status
+            == AgentExecutionStatus.SUCCESS
+        )
+
+        assert result.log_persisted is True
+        assert result.logging_error is None
+        assert agent_run_id is not None
+
+        with engine.connect() as connection:
+            stored_record = connection.execute(
+                text(
+                    """
+                    SELECT
+                        agent_name,
+                        run_type,
+                        execution_status,
+                        input_summary,
+                        output_summary
+                    FROM agent_runs
+                    WHERE agent_run_id = :agent_run_id;
+                    """
+                ),
+                {
+                    "agent_run_id": agent_run_id,
+                },
+            ).mappings().one()
+
+        assert (
+            stored_record["agent_name"]
+            == "Root-Cause Agent"
+        )
+
+        assert (
+            stored_record["run_type"]
+            == (
+                "root-cause-logging-"
+                "integration-test"
+            )
+        )
+
+        assert (
+            stored_record[
+                "execution_status"
+            ]
+            == "Success"
+        )
+
+        input_summary = json.loads(
+            stored_record[
+                "input_summary"
+            ]
+        )
+
+        output_summary = json.loads(
+            stored_record[
+                "output_summary"
+            ]
+        )
+
+        assert (
+            input_summary[
+                "input_data_keys"
+            ]
+            == [
+                "analysis_limit",
+            ]
+        )
+
+        assert (
+            "Root-cause analysis generated"
+            in output_summary["summary"]
+        )
+
+    finally:
+        if agent_run_id is not None:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        DELETE FROM agent_runs
+                        WHERE agent_run_id = :agent_run_id;
+                        """
+                    ),
+                    {
+                        "agent_run_id": agent_run_id,
+                    },
+                )

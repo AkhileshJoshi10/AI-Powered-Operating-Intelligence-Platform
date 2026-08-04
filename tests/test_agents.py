@@ -4563,3 +4563,808 @@ def test_recommendation_agent_result_is_logged(
                         "agent_run_id": agent_run_id,
                     },
                 )
+
+# -------------------------------------------------------------------------
+# Executive Brief Agent tests
+# -------------------------------------------------------------------------
+
+from datetime import date, datetime
+
+from sqlalchemy.exc import SQLAlchemyError
+
+import backend.app.agents.executive_brief_agent as executive_brief_module
+from backend.app.agents import ExecutiveBriefAgent
+
+
+def build_mock_executive_brief_response(
+    *,
+    action: str,
+) -> dict[str, Any]:
+    """Build one valid Executive Brief service response."""
+
+    action_message = (
+        "Daily Executive Brief "
+        f"{action} successfully."
+    )
+
+    return {
+        "status": "success",
+        "generated_at": datetime(
+            2026,
+            8,
+            4,
+            11,
+            0,
+            0,
+        ),
+        "action": action,
+        "message": action_message,
+        "brief": {
+            "brief_id": 7,
+            "brief_date": date(
+                2026,
+                8,
+                4,
+            ),
+            "brief_type": (
+                "Daily Executive Brief"
+            ),
+            "summary_text": (
+                "Controlled Executive Brief summary."
+            ),
+            "brief_data": {
+                "brief_version": 1,
+                "generated_at": (
+                    "2026-08-04T11:00:00"
+                ),
+                "kpi_snapshot": {
+                    "total_kpis": 12,
+                    "kpis": [],
+                    "latest_store_target_achievement": [],
+                },
+                "issue_snapshot": {
+                    "open_issue_count": 129,
+                    "high_priority_open_issue_count": 24,
+                    "in_progress_issue_count": 0,
+                    "top_open_issues": [],
+                },
+                "recommendation_snapshot": {
+                    "total_recommendations": 10,
+                    "recommendations_needing_review": 10,
+                    "status_counts": {
+                        "Pending Review": 10,
+                    },
+                    "top_recommendations": [],
+                },
+                "task_snapshot": {
+                    "total_tasks": 5,
+                    "active_task_count": 3,
+                    "blocked_task_count": 1,
+                    "overdue_task_count": 2,
+                    "status_counts": {
+                        "Blocked": 1,
+                    },
+                    "overdue_tasks": [],
+                    "priority_tasks": [],
+                },
+                "management_attention": [
+                    (
+                        "  Review 24 high-priority "
+                        "open business issues.  "
+                    ),
+                    " ",
+                    (
+                        "Complete management review "
+                        "for 10 recommendations."
+                    ),
+                ],
+            },
+            "status": "Draft",
+            "created_at": datetime(
+                2026,
+                8,
+                4,
+                11,
+                0,
+                0,
+            ),
+            "updated_at": datetime(
+                2026,
+                8,
+                4,
+                11,
+                0,
+                0,
+            ),
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        pytest.param(
+            "created",
+            id="created",
+        ),
+        pytest.param(
+            "updated",
+            id="updated",
+        ),
+    ],
+)
+def test_executive_brief_agent_returns_complete_result(
+    monkeypatch: Any,
+    action: str,
+) -> None:
+    """Created and updated responses should be structured."""
+
+    monkeypatch.setattr(
+        executive_brief_module,
+        "generate_daily_executive_brief",
+        lambda: build_mock_executive_brief_response(
+            action=action
+        ),
+    )
+
+    context = AgentContext(
+        run_type="executive-brief-unit-test",
+    )
+
+    result = asyncio.run(
+        ExecutiveBriefAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+
+    assert result.used_fallback is False
+
+    output_data = result.output_data
+
+    assert (
+        output_data["brief_status"]
+        == "Complete"
+    )
+
+    assert output_data["generation"] == {
+        "method": (
+            "Deterministic Current-State "
+            "Business Aggregation"
+        ),
+        "action": action,
+        "message": (
+            "Daily Executive Brief "
+            f"{action} successfully."
+        ),
+        "brief_version": 1,
+    }
+
+    assert output_data["snapshot"] == {
+        "total_kpis": 12,
+        "open_issue_count": 129,
+        "high_priority_open_issue_count": 24,
+        "recommendations_needing_review": 10,
+        "active_task_count": 3,
+        "blocked_task_count": 1,
+        "overdue_task_count": 2,
+    }
+
+    assert (
+        output_data["management_attention"]
+        == [
+            (
+                "Review 24 high-priority "
+                "open business issues."
+            ),
+            (
+                "Complete management review "
+                "for 10 recommendations."
+            ),
+        ]
+    )
+
+    assert output_data["database"] == {
+        "persisted": True,
+        "table": "executive_briefs",
+        "brief_id": 7,
+        "brief_date": "2026-08-04",
+        "brief_type": (
+            "Daily Executive Brief"
+        ),
+        "record_status": "Draft",
+        "same_day_behavior": (
+            "Create the first daily record or "
+            "update the existing record"
+        ),
+    }
+
+    assert (
+        output_data["brief"]["brief_id"]
+        == 7
+    )
+
+    assert (
+        output_data["brief"]["brief_date"]
+        == "2026-08-04"
+    )
+
+    assert (
+        f"Daily Executive Brief {action}"
+        in result.summary
+    )
+
+    assert (
+        "12 KPIs, 129 open issues"
+        in result.summary
+    )
+
+
+def test_executive_brief_agent_fails_for_invalid_service_response(
+    monkeypatch: Any,
+) -> None:
+    """Schema validation should reject incomplete service data."""
+
+    monkeypatch.setattr(
+        executive_brief_module,
+        "generate_daily_executive_brief",
+        lambda: {
+            "status": "success",
+            "generated_at": datetime(
+                2026,
+                8,
+                4,
+                11,
+                0,
+                0,
+            ),
+            "action": "created",
+            "message": (
+                "Daily Executive Brief "
+                "created successfully."
+            ),
+        },
+    )
+
+    context = AgentContext(
+        run_type="invalid-executive-brief-test",
+    )
+
+    result = asyncio.run(
+        ExecutiveBriefAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert (
+        result.error_type
+        == "ValidationError"
+    )
+
+    assert result.output_data == {}
+
+
+def test_executive_brief_agent_reports_service_failure(
+    monkeypatch: Any,
+) -> None:
+    """A database service failure should become a failed result."""
+
+    def raise_database_failure(
+    ) -> dict[str, Any]:
+        raise SQLAlchemyError(
+            "Simulated Executive Brief "
+            "database failure."
+        )
+
+    monkeypatch.setattr(
+        executive_brief_module,
+        "generate_daily_executive_brief",
+        raise_database_failure,
+    )
+
+    context = AgentContext(
+        run_type="failed-executive-brief-test",
+    )
+
+    result = asyncio.run(
+        ExecutiveBriefAgent().execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.FAILED
+    )
+
+    assert (
+        result.error_type
+        == "SQLAlchemyError"
+    )
+
+    assert (
+        "Simulated Executive Brief database failure"
+        in (
+            result.error_message
+            or ""
+        )
+    )
+
+
+class SequenceRecommendationAgent(
+    BaseAgent
+):
+    """Recommendation stub used for the five-agent sequence test."""
+
+    name = "Recommendation Agent"
+
+    description = (
+        "Returns controlled recommendations "
+        "for sequence testing."
+    )
+
+    async def run(
+        self,
+        context: AgentContext,
+    ) -> dict[str, Any]:
+        del context
+
+        return {
+            "summary": (
+                "Controlled recommendation "
+                "generation completed."
+            ),
+            "recommendations": [
+                {
+                    "issue_id": "ISSUE-HIGH-001",
+                },
+            ],
+        }
+
+
+def test_complete_agent_sequence_reaches_executive_brief(
+    monkeypatch: Any,
+) -> None:
+    """The deterministic five-agent sequence should complete."""
+
+    monkeypatch.setattr(
+        executive_brief_module,
+        "generate_daily_executive_brief",
+        lambda: build_mock_executive_brief_response(
+            action="created"
+        ),
+    )
+
+    context = AgentContext(
+        run_type="complete-agent-sequence-test",
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            SequenceMonitoringAgent(),
+            SequencePriorityAgent(),
+            SequenceRootCauseAgent(),
+            SequenceRecommendationAgent(),
+            ExecutiveBriefAgent(),
+        ]
+    )
+
+    results = asyncio.run(
+        orchestrator.run_sequence(
+            agent_names=[
+                "Monitoring Agent",
+                "Priority Agent",
+                "Root-Cause Agent",
+                "Recommendation Agent",
+                "Executive Brief Agent",
+            ],
+            context=context,
+            stop_on_failure=True,
+        )
+    )
+
+    assert len(results) == 5
+
+    assert all(
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+        for result in results
+    )
+
+    executive_brief_result = (
+        results[-1]
+    )
+
+    assert (
+        executive_brief_result.agent_name
+        == "Executive Brief Agent"
+    )
+
+    assert (
+        executive_brief_result.output_data[
+            "brief_status"
+        ]
+        == "Complete"
+    )
+
+    assert (
+        executive_brief_result.output_data[
+            "generation"
+        ]["action"]
+        == "created"
+    )
+
+
+@pytest.mark.integration
+def test_executive_brief_agent_with_seeded_database_and_same_day_update(
+) -> None:
+    """The real five-agent flow should create then update one brief."""
+
+    today = date.today()
+
+    daily_brief_type = (
+        "Daily Executive Brief"
+    )
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                DELETE FROM executive_briefs
+                WHERE
+                    brief_date = :brief_date
+                    AND brief_type = :brief_type;
+                """
+            ),
+            {
+                "brief_date": today,
+                "brief_type": daily_brief_type,
+            },
+        )
+
+    first_brief_id: int | None = None
+
+    try:
+        context = AgentContext(
+            run_type=(
+                "executive-brief-"
+                "integration-test"
+            ),
+            requested_by="pytest",
+            input_data={
+                "finding_limit": 10,
+                "manager_limit": 15,
+                "executive_limit": 10,
+                "analysis_limit": 10,
+                "recommendation_limit": 10,
+            },
+        )
+
+        orchestrator = AgentOrchestrator(
+            agents=[
+                MonitoringAgent(),
+                PriorityAgent(),
+                RootCauseAgent(),
+                RecommendationAgent(),
+                ExecutiveBriefAgent(),
+            ]
+        )
+
+        results = asyncio.run(
+            orchestrator.run_sequence(
+                agent_names=[
+                    "Monitoring Agent",
+                    "Priority Agent",
+                    "Root-Cause Agent",
+                    "Recommendation Agent",
+                    "Executive Brief Agent",
+                ],
+                context=context,
+                stop_on_failure=True,
+            )
+        )
+
+        assert len(results) == 5
+
+        assert all(
+            result.execution_status
+            == AgentExecutionStatus.SUCCESS
+            for result in results
+        )
+
+        first_brief_result = results[-1]
+
+        assert (
+            first_brief_result.output_data[
+                "brief_status"
+            ]
+            == "Complete"
+        )
+
+        assert (
+            first_brief_result.output_data[
+                "generation"
+            ]["action"]
+            == "created"
+        )
+
+        first_brief_id = int(
+            first_brief_result.output_data[
+                "database"
+            ]["brief_id"]
+        )
+
+        assert (
+            first_brief_result.output_data[
+                "snapshot"
+            ]["total_kpis"]
+            == 12
+        )
+
+        assert (
+            first_brief_result.output_data[
+                "snapshot"
+            ][
+                "high_priority_open_issue_count"
+            ]
+            == 24
+        )
+
+        second_context = AgentContext(
+            run_type=(
+                "executive-brief-"
+                "same-day-update-test"
+            ),
+            requested_by="pytest",
+        )
+
+        second_brief_result = asyncio.run(
+            ExecutiveBriefAgent().execute(
+                second_context
+            )
+        )
+
+        assert (
+            second_brief_result.execution_status
+            == AgentExecutionStatus.SUCCESS
+        )
+
+        assert (
+            second_brief_result.output_data[
+                "generation"
+            ]["action"]
+            == "updated"
+        )
+
+        second_brief_id = int(
+            second_brief_result.output_data[
+                "database"
+            ]["brief_id"]
+        )
+
+        assert (
+            second_brief_id
+            == first_brief_id
+        )
+
+        with engine.connect() as connection:
+            stored_summary = connection.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) AS record_count,
+                        MIN(brief_id) AS minimum_id,
+                        MAX(brief_id) AS maximum_id,
+                        MAX(status) AS record_status
+                    FROM executive_briefs
+                    WHERE
+                        brief_date = :brief_date
+                        AND brief_type = :brief_type;
+                    """
+                ),
+                {
+                    "brief_date": today,
+                    "brief_type": daily_brief_type,
+                },
+            ).mappings().one()
+
+        assert (
+            stored_summary["record_count"]
+            == 1
+        )
+
+        assert (
+            stored_summary["minimum_id"]
+            == first_brief_id
+        )
+
+        assert (
+            stored_summary["maximum_id"]
+            == first_brief_id
+        )
+
+        assert (
+            stored_summary["record_status"]
+            == "Draft"
+        )
+
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM executive_briefs
+                    WHERE
+                        brief_date = :brief_date
+                        AND brief_type = :brief_type;
+                    """
+                ),
+                {
+                    "brief_date": today,
+                    "brief_type": daily_brief_type,
+                },
+            )
+
+
+@pytest.mark.integration
+def test_executive_brief_agent_result_is_logged(
+    monkeypatch: Any,
+) -> None:
+    """An Executive Brief Agent run should be stored in agent_runs."""
+
+    monkeypatch.setattr(
+        executive_brief_module,
+        "generate_daily_executive_brief",
+        lambda: build_mock_executive_brief_response(
+            action="created"
+        ),
+    )
+
+    agent_run_id: int | None = None
+
+    with engine.connect() as connection:
+        actual_database = connection.execute(
+            text(
+                "SELECT current_database();"
+            )
+        ).scalar_one()
+
+    assert (
+        actual_database
+        == "ai_operating_intelligence_test"
+    )
+
+    context = AgentContext(
+        run_type=(
+            "executive-brief-logging-"
+            "integration-test"
+        ),
+        requested_by="pytest",
+    )
+
+    orchestrator = AgentOrchestrator(
+        agents=[
+            ExecutiveBriefAgent(),
+        ],
+        run_logger=PostgresAgentRunLogger(
+            engine
+        ),
+    )
+
+    try:
+        result = asyncio.run(
+            orchestrator.run_agent(
+                "Executive Brief Agent",
+                context,
+            )
+        )
+
+        agent_run_id = result.agent_run_id
+
+        assert (
+            result.execution_status
+            == AgentExecutionStatus.SUCCESS
+        )
+
+        assert result.log_persisted is True
+        assert result.logging_error is None
+        assert agent_run_id is not None
+
+        with engine.connect() as connection:
+            stored_record = connection.execute(
+                text(
+                    """
+                    SELECT
+                        agent_name,
+                        run_type,
+                        execution_status,
+                        input_summary,
+                        output_summary
+                    FROM agent_runs
+                    WHERE agent_run_id = :agent_run_id;
+                    """
+                ),
+                {
+                    "agent_run_id": agent_run_id,
+                },
+            ).mappings().one()
+
+        assert (
+            stored_record["agent_name"]
+            == "Executive Brief Agent"
+        )
+
+        assert (
+            stored_record["run_type"]
+            == (
+                "executive-brief-logging-"
+                "integration-test"
+            )
+        )
+
+        assert (
+            stored_record[
+                "execution_status"
+            ]
+            == "Success"
+        )
+
+        input_summary = json.loads(
+            stored_record[
+                "input_summary"
+            ]
+        )
+
+        output_summary = json.loads(
+            stored_record[
+                "output_summary"
+            ]
+        )
+
+        assert (
+            input_summary[
+                "input_data_keys"
+            ]
+            == []
+        )
+
+        assert (
+            "Daily Executive Brief created"
+            in output_summary["summary"]
+        )
+
+    finally:
+        if agent_run_id is not None:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        DELETE FROM agent_runs
+                        WHERE agent_run_id = :agent_run_id;
+                        """
+                    ),
+                    {
+                        "agent_run_id": agent_run_id,
+                    },
+                )

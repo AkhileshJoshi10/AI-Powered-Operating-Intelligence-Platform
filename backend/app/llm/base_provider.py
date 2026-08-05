@@ -34,7 +34,8 @@ EMAIL_PATTERN = re.compile(
     r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 )
 PHONE_PATTERN = re.compile(
-    r"(?<!\d)(?:\+?\d[\d\s()-]{7,}\d)(?!\d)"
+    r"(?<!\d)(?!\d{4}-\d{2}-\d{2}(?:T|\s|$))"
+    r"(?:\+?\d[\d\s()-]{7,}\d)(?!\d)"
 )
 
 

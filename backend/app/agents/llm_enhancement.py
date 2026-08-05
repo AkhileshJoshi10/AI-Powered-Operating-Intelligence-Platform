@@ -635,6 +635,280 @@ class RootCauseExplanationV1(BaseModel):
 
         return self
 
+
+class RecommendationSequencedActionV1(BaseModel):
+    """One deterministic recommendation action in a controlled sequence."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    step_id: str = Field(
+        min_length=1,
+        max_length=260,
+    )
+    action_text: str = Field(
+        min_length=1,
+        max_length=3000,
+    )
+    sequence_position: int = Field(
+        ge=1,
+        le=50,
+    )
+
+    @field_validator(
+        "step_id",
+        "action_text",
+    )
+    @classmethod
+    def normalize_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Recommendation action text cannot be empty."
+            )
+
+        return normalized
+
+
+class RecommendationIssueEnhancementV1(BaseModel):
+    """One grounded enhancement of a deterministic recommendation."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    issue_id: str = Field(
+        min_length=1,
+        max_length=220,
+    )
+    deterministic_recommendation_title: str = Field(
+        min_length=1,
+        max_length=1000,
+    )
+    deterministic_owner_role: str = Field(
+        min_length=1,
+        max_length=250,
+    )
+    deterministic_deadline: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    deterministic_expected_impact: str = Field(
+        min_length=1,
+        max_length=3000,
+    )
+    deterministic_confidence_score: float = Field(
+        ge=0,
+        le=100,
+    )
+    deterministic_status: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    manager_friendly_summary: str = Field(
+        min_length=1,
+        max_length=5000,
+    )
+    sequenced_actions: list[
+        RecommendationSequencedActionV1
+    ] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    sequencing_rationale: str = Field(
+        min_length=1,
+        max_length=4000,
+    )
+    missing_information_warnings: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+    human_review_required: bool = True
+    approval_or_execution_performed: bool = False
+
+    @field_validator(
+        "issue_id",
+        "deterministic_recommendation_title",
+        "deterministic_owner_role",
+        "deterministic_deadline",
+        "deterministic_expected_impact",
+        "deterministic_status",
+        "manager_friendly_summary",
+        "sequencing_rationale",
+    )
+    @classmethod
+    def normalize_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Recommendation enhancement text cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator(
+        "missing_information_warnings",
+    )
+    @classmethod
+    def normalize_text_values(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+    @model_validator(mode="after")
+    def validate_action_sequence(
+        self,
+    ) -> "RecommendationIssueEnhancementV1":
+        step_ids = [
+            action.step_id
+            for action in self.sequenced_actions
+        ]
+
+        if len(step_ids) != len(set(step_ids)):
+            raise ValueError(
+                "Recommendation action steps cannot contain "
+                "duplicate step IDs."
+            )
+
+        positions = [
+            action.sequence_position
+            for action in self.sequenced_actions
+        ]
+
+        if positions != list(
+            range(
+                1,
+                len(positions) + 1,
+            )
+        ):
+            raise ValueError(
+                "Recommendation sequence positions must be "
+                "contiguous and follow the returned action order."
+            )
+
+        if not self.human_review_required:
+            raise ValueError(
+                "Recommendation enhancement must require "
+                "human review."
+            )
+
+        if self.approval_or_execution_performed:
+            raise ValueError(
+                "Recommendation enhancement cannot approve or "
+                "execute an action."
+            )
+
+        return self
+
+
+class RecommendationEnhancementV1(BaseModel):
+    """Controlled schema for Recommendation Agent LLM output."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    summary: str = Field(
+        min_length=1,
+        max_length=6000,
+    )
+    recommendation_enhancements: list[
+        RecommendationIssueEnhancementV1
+    ] = Field(
+        min_length=1,
+        max_length=20,
+    )
+    confidence_score: float = Field(
+        ge=0,
+        le=100,
+    )
+    missing_information_warnings: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    human_review_required: bool = True
+    recommendations_approved: bool = False
+    tasks_created: bool = False
+
+    @field_validator("summary")
+    @classmethod
+    def normalize_summary(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Recommendation enhancement summary cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator(
+        "missing_information_warnings",
+    )
+    @classmethod
+    def normalize_text_values(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+    @model_validator(mode="after")
+    def validate_control_flags(
+        self,
+    ) -> "RecommendationEnhancementV1":
+        issue_ids = [
+            enhancement.issue_id
+            for enhancement in self.recommendation_enhancements
+        ]
+
+        if len(issue_ids) != len(set(issue_ids)):
+            raise ValueError(
+                "Recommendation enhancements cannot contain "
+                "duplicate issue IDs."
+            )
+
+        if not self.human_review_required:
+            raise ValueError(
+                "Recommendation enhancement must require "
+                "human review."
+            )
+
+        if self.recommendations_approved:
+            raise ValueError(
+                "The LLM cannot approve recommendations."
+            )
+
+        if self.tasks_created:
+            raise ValueError(
+                "The LLM cannot create tasks."
+            )
+
+        return self
+
+
 def collect_evidence_ids(
     value: object,
 ) -> list[str]:

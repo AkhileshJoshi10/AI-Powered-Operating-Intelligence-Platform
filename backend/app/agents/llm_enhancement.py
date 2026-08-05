@@ -909,6 +909,240 @@ class RecommendationEnhancementV1(BaseModel):
         return self
 
 
+
+class ExecutiveBriefSnapshotV1(BaseModel):
+    """Exact deterministic counts included in the Executive Brief."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    total_kpis: int = Field(
+        ge=0,
+    )
+    open_issue_count: int = Field(
+        ge=0,
+    )
+    high_priority_open_issue_count: int = Field(
+        ge=0,
+    )
+    recommendations_needing_review: int = Field(
+        ge=0,
+    )
+    active_task_count: int = Field(
+        ge=0,
+    )
+    blocked_task_count: int = Field(
+        ge=0,
+    )
+    overdue_task_count: int = Field(
+        ge=0,
+    )
+
+
+class ExecutiveBriefAttentionPointV1(BaseModel):
+    """One grounded explanation of a deterministic attention point."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    attention_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    deterministic_attention_text: str = Field(
+        min_length=1,
+        max_length=3000,
+    )
+    executive_context: str = Field(
+        min_length=1,
+        max_length=4000,
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+
+    @field_validator(
+        "attention_id",
+        "deterministic_attention_text",
+        "executive_context",
+    )
+    @classmethod
+    def normalize_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Executive Brief attention text cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def normalize_evidence_ids(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+
+class ExecutiveBriefEnhancementV1(BaseModel):
+    """Controlled schema for Executive Brief Agent LLM output."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    summary: str = Field(
+        min_length=1,
+        max_length=6000,
+    )
+    headline: str = Field(
+        min_length=1,
+        max_length=500,
+    )
+    executive_narrative: str = Field(
+        min_length=1,
+        max_length=8000,
+    )
+    deterministic_brief_action: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    deterministic_brief_date: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    deterministic_record_status: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    deterministic_snapshot: ExecutiveBriefSnapshotV1
+    management_attention: list[
+        ExecutiveBriefAttentionPointV1
+    ] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        max_length=400,
+    )
+    comparison_available: bool = False
+    change_summary: str = Field(
+        min_length=1,
+        max_length=3000,
+    )
+    missing_evidence_warnings: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    human_review_required: bool = True
+    database_update_performed: bool = False
+    workflow_action_performed: bool = False
+
+    @field_validator(
+        "summary",
+        "headline",
+        "executive_narrative",
+        "deterministic_brief_action",
+        "deterministic_brief_date",
+        "deterministic_record_status",
+        "change_summary",
+    )
+    @classmethod
+    def normalize_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Executive Brief enhancement text cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator(
+        "evidence_ids",
+        "missing_evidence_warnings",
+    )
+    @classmethod
+    def normalize_text_values(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+    @model_validator(mode="after")
+    def validate_controlled_output(
+        self,
+    ) -> "ExecutiveBriefEnhancementV1":
+        attention_ids = [
+            attention.attention_id
+            for attention in self.management_attention
+        ]
+
+        if len(attention_ids) != len(set(attention_ids)):
+            raise ValueError(
+                "Executive Brief attention points cannot contain "
+                "duplicate attention IDs."
+            )
+
+        nested_evidence_ids = {
+            evidence_id
+            for attention in self.management_attention
+            for evidence_id in attention.evidence_ids
+        }
+
+        missing_ids = sorted(
+            nested_evidence_ids.difference(
+                self.evidence_ids
+            )
+        )
+
+        if missing_ids:
+            raise ValueError(
+                "Executive Brief attention evidence IDs must also "
+                "appear in the top-level evidence_ids list: "
+                + ", ".join(
+                    missing_ids
+                )
+            )
+
+        if not self.human_review_required:
+            raise ValueError(
+                "Executive Brief enhancement must require "
+                "human review."
+            )
+
+        if self.database_update_performed:
+            raise ValueError(
+                "The LLM cannot update the Executive Brief database."
+            )
+
+        if self.workflow_action_performed:
+            raise ValueError(
+                "The LLM cannot perform management workflow actions."
+            )
+
+        return self
+
 def collect_evidence_ids(
     value: object,
 ) -> list[str]:

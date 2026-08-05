@@ -22,6 +22,9 @@ from backend.app.routers.issues import (
 from backend.app.routers.kpis import (
     router as kpi_router,
 )
+from backend.app.routers.knowledge import (
+    router as knowledge_router,
+)
 from backend.app.routers.recommendations import (
     router as recommendation_router,
 )
@@ -36,7 +39,8 @@ app = FastAPI(
     description=(
         "Backend API for business KPIs, analytics, issues, "
         "root-cause analyses, recommendations, tasks, "
-        "data management, executive briefs, complete "
+        "data management, knowledge ingestion and retrieval, "
+        "executive briefs, complete "
         "AI Chief of Staff workflows, and automation."
     ),
 )
@@ -44,6 +48,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(kpi_router)
+app.include_router(knowledge_router)
 app.include_router(issue_router)
 app.include_router(recommendation_router)
 app.include_router(task_router)

@@ -108,7 +108,7 @@ def read_csv_values(
 
 @dataclass(frozen=True)
 class Settings:
-    """Application and provider-independent LLM settings."""
+    """Application, provider-independent LLM, and knowledge settings."""
 
     app_name: str = os.getenv(
         "APP_NAME",
@@ -181,6 +181,47 @@ class Settings:
     llm_allowed_tools: tuple[str, ...] = (
         read_csv_values(
             "LLM_ALLOWED_TOOLS"
+        )
+    )
+
+
+    knowledge_enabled: bool = read_boolean(
+        "KNOWLEDGE_ENABLED",
+        True,
+    )
+    knowledge_max_file_bytes: int = read_integer(
+        "KNOWLEDGE_MAX_FILE_BYTES",
+        5_000_000,
+    )
+    knowledge_chunk_size_chars: int = read_integer(
+        "KNOWLEDGE_CHUNK_SIZE_CHARS",
+        1800,
+    )
+    knowledge_chunk_overlap_chars: int = read_integer(
+        "KNOWLEDGE_CHUNK_OVERLAP_CHARS",
+        200,
+    )
+    knowledge_max_chunks_per_document: int = read_integer(
+        "KNOWLEDGE_MAX_CHUNKS_PER_DOCUMENT",
+        500,
+    )
+    knowledge_default_search_limit: int = read_integer(
+        "KNOWLEDGE_DEFAULT_SEARCH_LIMIT",
+        5,
+    )
+    knowledge_max_search_limit: int = read_integer(
+        "KNOWLEDGE_MAX_SEARCH_LIMIT",
+        20,
+    )
+    knowledge_allowed_extensions: tuple[str, ...] = (
+        read_csv_values(
+            "KNOWLEDGE_ALLOWED_EXTENSIONS"
+        )
+        or (
+            ".txt",
+            ".md",
+            ".csv",
+            ".json",
         )
     )
 

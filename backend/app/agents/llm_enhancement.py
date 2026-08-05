@@ -432,6 +432,209 @@ class PriorityExplanationV1(BaseModel):
         return self
 
 
+
+class RootCauseIssueExplanationV1(BaseModel):
+    """One evidence-grounded manager explanation of a root cause."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    issue_id: str = Field(
+        min_length=1,
+        max_length=220,
+    )
+    deterministic_root_cause_category: str = Field(
+        min_length=1,
+        max_length=250,
+    )
+    deterministic_root_cause_summary: str = Field(
+        min_length=1,
+        max_length=4000,
+    )
+    deterministic_confidence_score: float = Field(
+        ge=0,
+        le=100,
+    )
+    manager_friendly_explanation: str = Field(
+        min_length=1,
+        max_length=6000,
+    )
+    likely_contributing_factors: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    confidence_score: float = Field(
+        ge=0,
+        le=100,
+    )
+    missing_evidence_warnings: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+    unsupported_claims_rejected: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+    human_review_required: bool = True
+
+    @field_validator(
+        "issue_id",
+        "deterministic_root_cause_category",
+        "deterministic_root_cause_summary",
+        "manager_friendly_explanation",
+    )
+    @classmethod
+    def normalize_required_text(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Root-cause explanation text cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator(
+        "likely_contributing_factors",
+        "evidence_ids",
+        "missing_evidence_warnings",
+        "unsupported_claims_rejected",
+    )
+    @classmethod
+    def normalize_text_values(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+    @model_validator(mode="after")
+    def require_human_review(
+        self,
+    ) -> "RootCauseIssueExplanationV1":
+        if not self.human_review_required:
+            raise ValueError(
+                "Root-cause explanations must require human review."
+            )
+
+        return self
+
+
+class RootCauseExplanationV1(BaseModel):
+    """Controlled schema for the Root-Cause Agent LLM response."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    summary: str = Field(
+        min_length=1,
+        max_length=6000,
+    )
+    root_cause_explanations: list[
+        RootCauseIssueExplanationV1
+    ] = Field(
+        min_length=1,
+        max_length=20,
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        max_length=300,
+    )
+    confidence_score: float = Field(
+        ge=0,
+        le=100,
+    )
+    missing_evidence_warnings: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    human_review_required: bool = True
+
+    @field_validator("summary")
+    @classmethod
+    def normalize_summary(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = normalize_text(
+            value
+        )
+
+        if not normalized:
+            raise ValueError(
+                "Root-cause summary text cannot be empty."
+            )
+
+        return normalized
+
+    @field_validator(
+        "evidence_ids",
+        "missing_evidence_warnings",
+    )
+    @classmethod
+    def normalize_text_values(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        return normalize_text_list(
+            list(values)
+        )
+
+    @model_validator(mode="after")
+    def validate_internal_references(
+        self,
+    ) -> "RootCauseExplanationV1":
+        issue_ids = [
+            explanation.issue_id
+            for explanation in self.root_cause_explanations
+        ]
+
+        if len(issue_ids) != len(set(issue_ids)):
+            raise ValueError(
+                "Root-cause explanations cannot contain duplicate "
+                "issue IDs."
+            )
+
+        nested_evidence_ids = {
+            evidence_id
+            for explanation in self.root_cause_explanations
+            for evidence_id in explanation.evidence_ids
+        }
+
+        missing_ids = sorted(
+            nested_evidence_ids.difference(
+                self.evidence_ids
+            )
+        )
+
+        if missing_ids:
+            raise ValueError(
+                "Root-cause evidence IDs must also appear in the "
+                "top-level evidence_ids list: "
+                + ", ".join(
+                    missing_ids
+                )
+            )
+
+        if not self.human_review_required:
+            raise ValueError(
+                "Root-cause enhancement must require human review."
+            )
+
+        return self
+
 def collect_evidence_ids(
     value: object,
 ) -> list[str]:

@@ -112,12 +112,71 @@ CREATE TABLE IF NOT EXISTS executive_briefs (
 CREATE TABLE IF NOT EXISTS agent_runs (
     agent_run_id BIGSERIAL PRIMARY KEY,
     agent_name VARCHAR(150) NOT NULL,
+    agent_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
     run_type VARCHAR(100),
     execution_status VARCHAR(50) NOT NULL,
     input_summary TEXT,
     output_summary TEXT,
+
+    model_provider VARCHAR(100),
+    model_name VARCHAR(200),
+    prompt_name VARCHAR(150),
+    prompt_version VARCHAR(50),
+
+    input_tokens BIGINT,
+    output_tokens BIGINT,
+    total_tokens BIGINT,
+    estimated_cost_usd NUMERIC(14, 8),
+    llm_latency_ms NUMERIC(14, 2),
+
+    used_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+    tool_calls JSONB NOT NULL DEFAULT '[]'::JSONB,
+    run_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+
+    error_type VARCHAR(150),
+    error_message TEXT,
+    llm_error_type VARCHAR(150),
+    llm_error_message TEXT,
+
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
+    completed_at TIMESTAMP,
+
+    CONSTRAINT agent_runs_token_usage_check
+        CHECK (
+            (
+                input_tokens IS NULL
+                AND output_tokens IS NULL
+                AND total_tokens IS NULL
+            )
+            OR
+            (
+                input_tokens >= 0
+                AND output_tokens >= 0
+                AND total_tokens = input_tokens + output_tokens
+            )
+        ),
+
+    CONSTRAINT agent_runs_estimated_cost_check
+        CHECK (
+            estimated_cost_usd IS NULL
+            OR estimated_cost_usd >= 0
+        ),
+
+    CONSTRAINT agent_runs_llm_latency_check
+        CHECK (
+            llm_latency_ms IS NULL
+            OR llm_latency_ms >= 0
+        ),
+
+    CONSTRAINT agent_runs_tool_calls_json_check
+        CHECK (
+            JSONB_TYPEOF(tool_calls) = 'array'
+        ),
+
+    CONSTRAINT agent_runs_run_metadata_json_check
+        CHECK (
+            JSONB_TYPEOF(run_metadata) = 'object'
+        )
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -152,3 +211,16 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_recommendation_unique
     ON tasks(recommendation_id)
     WHERE recommendation_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_started
+    ON agent_runs(
+        agent_name,
+        started_at DESC
+    );
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_provider_model
+    ON agent_runs(
+        model_provider,
+        model_name
+    )
+    WHERE model_provider IS NOT NULL;

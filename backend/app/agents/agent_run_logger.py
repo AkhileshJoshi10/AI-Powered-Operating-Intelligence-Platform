@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -32,7 +32,7 @@ def truncate_text(
 
 
 def serialize_summary(
-    payload: dict,
+    payload: dict[str, Any],
 ) -> str:
     """Convert a summary payload into compact JSON text."""
 
@@ -46,6 +46,20 @@ def serialize_summary(
 
     return truncate_text(
         serialized_value
+    )
+
+
+def serialize_json_value(
+    value: Any,
+) -> str:
+    """Serialize one value for a PostgreSQL JSONB parameter."""
+
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        default=str,
+        separators=(",", ":"),
+        sort_keys=True,
     )
 
 
@@ -82,7 +96,9 @@ def build_input_summary(
         "run_id": context.run_id,
         "run_type": context.run_type,
         "requested_by": context.requested_by,
-        "issue_count": len(context.issue_ids),
+        "issue_count": len(
+            context.issue_ids
+        ),
         "issue_ids": context.issue_ids[:20],
         "input_data_keys": sorted(
             str(key)
@@ -92,7 +108,9 @@ def build_input_summary(
             str(key)
             for key in context.metadata
         ),
-        "created_at": context.created_at.isoformat(),
+        "created_at": (
+            context.created_at.isoformat()
+        ),
     }
 
     return serialize_summary(
@@ -107,10 +125,45 @@ def build_output_summary(
 
     payload = {
         "run_id": result.run_id,
+        "agent_version": (
+            result.agent_version
+        ),
         "summary": result.summary,
-        "used_fallback": result.used_fallback,
+        "used_fallback": (
+            result.used_fallback
+        ),
         "error_type": result.error_type,
-        "error_message": result.error_message,
+        "error_message": (
+            result.error_message
+        ),
+        "model_provider": (
+            result.model_provider
+        ),
+        "model_name": result.model_name,
+        "prompt_name": result.prompt_name,
+        "prompt_version": (
+            result.prompt_version
+        ),
+        "input_tokens": result.input_tokens,
+        "output_tokens": (
+            result.output_tokens
+        ),
+        "total_tokens": result.total_tokens,
+        "estimated_cost_usd": (
+            result.estimated_cost_usd
+        ),
+        "llm_latency_ms": (
+            result.llm_latency_ms
+        ),
+        "tool_call_count": len(
+            result.tool_calls
+        ),
+        "llm_error_type": (
+            result.llm_error_type
+        ),
+        "llm_error_message": (
+            result.llm_error_message
+        ),
         "output_data_keys": sorted(
             str(key)
             for key in result.output_data
@@ -138,7 +191,7 @@ class AgentRunLogger(Protocol):
 
 
 class PostgresAgentRunLogger:
-    """Store agent execution records in PostgreSQL."""
+    """Store deterministic, LLM, and tool execution records."""
 
     def __init__(
         self,
@@ -154,7 +207,7 @@ class PostgresAgentRunLogger:
         context: AgentContext,
         result: AgentResult,
     ) -> int:
-        """Insert one agent execution into agent_runs."""
+        """Insert one synchronized execution into agent_runs."""
 
         if context.run_id != result.run_id:
             raise ValueError(
@@ -165,19 +218,53 @@ class PostgresAgentRunLogger:
             """
             INSERT INTO agent_runs (
                 agent_name,
+                agent_version,
                 run_type,
                 execution_status,
                 input_summary,
                 output_summary,
+                model_provider,
+                model_name,
+                prompt_name,
+                prompt_version,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                estimated_cost_usd,
+                llm_latency_ms,
+                used_fallback,
+                tool_calls,
+                run_metadata,
+                error_type,
+                error_message,
+                llm_error_type,
+                llm_error_message,
                 started_at,
                 completed_at
             )
             VALUES (
                 :agent_name,
+                :agent_version,
                 :run_type,
                 :execution_status,
                 :input_summary,
                 :output_summary,
+                :model_provider,
+                :model_name,
+                :prompt_name,
+                :prompt_version,
+                :input_tokens,
+                :output_tokens,
+                :total_tokens,
+                :estimated_cost_usd,
+                :llm_latency_ms,
+                :used_fallback,
+                CAST(:tool_calls AS JSONB),
+                CAST(:run_metadata AS JSONB),
+                :error_type,
+                :error_message,
+                :llm_error_type,
+                :llm_error_message,
                 :started_at,
                 :completed_at
             )
@@ -187,15 +274,72 @@ class PostgresAgentRunLogger:
 
         parameters = {
             "agent_name": result.agent_name,
+            "agent_version": (
+                result.agent_version
+            ),
             "run_type": result.run_type,
             "execution_status": (
                 result.execution_status.value
             ),
-            "input_summary": build_input_summary(
-                context
+            "input_summary": (
+                build_input_summary(
+                    context
+                )
             ),
-            "output_summary": build_output_summary(
-                result
+            "output_summary": (
+                build_output_summary(
+                    result
+                )
+            ),
+            "model_provider": (
+                result.model_provider
+            ),
+            "model_name": result.model_name,
+            "prompt_name": result.prompt_name,
+            "prompt_version": (
+                result.prompt_version
+            ),
+            "input_tokens": result.input_tokens,
+            "output_tokens": (
+                result.output_tokens
+            ),
+            "total_tokens": result.total_tokens,
+            "estimated_cost_usd": (
+                result.estimated_cost_usd
+            ),
+            "llm_latency_ms": (
+                result.llm_latency_ms
+            ),
+            "used_fallback": (
+                result.used_fallback
+            ),
+            "tool_calls": (
+                serialize_json_value(
+                    result.tool_calls
+                )
+            ),
+            "run_metadata": (
+                serialize_json_value(
+                    result.run_metadata
+                )
+            ),
+            "error_type": result.error_type,
+            "error_message": (
+                truncate_text(
+                    result.error_message
+                )
+                if result.error_message
+                else None
+            ),
+            "llm_error_type": (
+                result.llm_error_type
+            ),
+            "llm_error_message": (
+                truncate_text(
+                    result.llm_error_message
+                )
+                if result.llm_error_message
+                else None
             ),
             "started_at": to_naive_utc(
                 result.started_at
@@ -211,4 +355,6 @@ class PostgresAgentRunLogger:
                 parameters,
             ).scalar_one()
 
-        return int(agent_run_id)
+        return int(
+            agent_run_id
+        )

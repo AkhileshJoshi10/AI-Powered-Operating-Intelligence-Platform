@@ -17,6 +17,9 @@ from backend.app.llm.llm_exceptions import (
     LLMTimeoutError,
     LLMToolPermissionError,
 )
+from backend.app.llm.groq_provider import (
+    GroqProvider,
+)
 from backend.app.llm.llm_models import (
     LLMMessage,
     LLMProviderConfig,
@@ -42,6 +45,7 @@ from backend.app.llm.provider_registry import (
 
 __all__ = [
     "BaseLLMProvider",
+    "GroqProvider",
     "LLMAuthenticationError",
     "LLMConfigurationError",
     "LLMCostLimitExceededError",

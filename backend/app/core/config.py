@@ -185,6 +185,11 @@ class Settings:
     )
 
 
+    groq_api_key: str = os.getenv(
+        "GROQ_API_KEY",
+        "",
+    ).strip()
+
     knowledge_enabled: bool = read_boolean(
         "KNOWLEDGE_ENABLED",
         True,

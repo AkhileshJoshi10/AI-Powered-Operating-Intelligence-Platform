@@ -82,6 +82,22 @@ class LLMProviderRegistry:
         )
 
 
+def build_groq_provider(
+    config: LLMProviderConfig,
+) -> BaseLLMProvider:
+    """Construct the configured Groq adapter."""
+
+    from backend.app.core.config import settings
+    from backend.app.llm.groq_provider import (
+        GroqProvider,
+    )
+
+    return GroqProvider(
+        config,
+        api_key=settings.groq_api_key,
+    )
+
+
 def build_default_provider_registry(
 ) -> LLMProviderRegistry:
     """Create the registry containing safe built-in providers."""
@@ -94,6 +110,10 @@ def build_default_provider_registry(
     registry.register(
         "mock",
         MockLLMProvider,
+    )
+    registry.register(
+        "groq",
+        build_groq_provider,
     )
 
     return registry

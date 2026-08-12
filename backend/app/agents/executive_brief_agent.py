@@ -894,6 +894,31 @@ def validate_executive_brief_enhancement_facts(
         )
     )
 
+    expected_top_level_evidence_ids: list[str] = []
+
+    for expected_item in expected_attention:
+        for evidence_id in get_string_list(
+            expected_item.get(
+                "evidence_ids"
+            )
+        ):
+            if (
+                evidence_id
+                not in expected_top_level_evidence_ids
+            ):
+                expected_top_level_evidence_ids.append(
+                    evidence_id
+                )
+
+    if (
+        enhancement.evidence_ids
+        != expected_top_level_evidence_ids
+    ):
+        raise LLMProviderResponseError(
+            "The LLM changed the deterministic Executive Brief "
+            "top-level evidence reference list."
+        )
+
     expected_attention_ids = [
         item["attention_id"]
         for item in expected_attention
@@ -1008,17 +1033,126 @@ class ExecutiveBriefAgent(BaseAgent):
                     deterministic_output
                 )
             )
+
             allowed_evidence_ids = (
                 get_allowed_executive_brief_evidence_ids(
                     deterministic_output
                 )
             )
-            mock_structured_output = (
+
+            expected_structured_output = (
                 build_mock_executive_brief_output(
                     deterministic_output
                 )
+            )
+
+            required_top_level_evidence_ids = [
+                clean_text(
+                    evidence_id
+                )
+                for evidence_id in get_list(
+                    expected_structured_output.get(
+                        "evidence_ids"
+                    )
+                )
+                if clean_text(
+                    evidence_id
+                )
+            ]
+
+            validated_context[
+                "required_output_contract"
+            ] = {
+                "instruction": (
+                    "Return every required top-level and nested field. "
+                    "Copy every value in required_control_values exactly. "
+                    "human_review_required must be true. "
+                    "database_update_performed, workflow_action_performed, "
+                    "and comparison_available must be false. "
+                    "Copy required_top_level_evidence_ids exactly into "
+                    "the top-level evidence_ids field, in the supplied "
+                    "order. Every evidence ID used inside any "
+                    "management_attention item must also appear in that "
+                    "top-level evidence_ids list. "
+                    "Do not omit executive_context from any "
+                    "management_attention item. Preserve deterministic "
+                    "snapshot values, brief action, brief date, record "
+                    "status, management-attention text, evidence "
+                    "references, comparison policy, and control flags "
+                    "exactly. Only improve manager-facing narrative "
+                    "and executive-context wording where allowed."
+                ),
+                "required_top_level_fields": [
+                    "summary",
+                    "headline",
+                    "executive_narrative",
+                    "deterministic_brief_action",
+                    "deterministic_brief_date",
+                    "deterministic_record_status",
+                    "deterministic_snapshot",
+                    "management_attention",
+                    "evidence_ids",
+                    "comparison_available",
+                    "change_summary",
+                    "missing_evidence_warnings",
+                    "human_review_required",
+                    "database_update_performed",
+                    "workflow_action_performed",
+                ],
+                "required_management_attention_fields": [
+                    "attention_id",
+                    "deterministic_attention_text",
+                    "executive_context",
+                    "evidence_ids",
+                ],
+                "required_control_values": {
+                    "human_review_required": True,
+                    "database_update_performed": False,
+                    "workflow_action_performed": False,
+                    "comparison_available": False,
+                },
+                "required_top_level_evidence_ids": (
+                    required_top_level_evidence_ids
+                ),
+                "management_attention_shape": {
+                    "attention_id": (
+                        "Copy the exact allowed attention_id."
+                    ),
+                    "deterministic_attention_text": (
+                        "Copy the exact deterministic attention text."
+                    ),
+                    "executive_context": (
+                        "Required manager-facing context grounded only "
+                        "in the supplied deterministic information."
+                    ),
+                    "evidence_ids": (
+                        "Use only allowed evidence identifiers."
+                    ),
+                },
+            }
+
+            mock_structured_output = (
+                expected_structured_output
                 if provider.provider_name == "mock"
                 else None
+            )
+
+            expected_attention_items = (
+                build_attention_reference_items(
+                    deterministic_output
+                )
+            )
+
+            generation = get_mapping(
+                deterministic_output.get(
+                    "generation"
+                )
+            )
+
+            database = get_mapping(
+                deterministic_output.get(
+                    "database"
+                )
             )
 
             enhancement, execution_metadata = (
@@ -1039,6 +1173,39 @@ class ExecutiveBriefAgent(BaseAgent):
                     allowed_evidence_ids=(
                         allowed_evidence_ids
                     ),
+                    allowed_references={
+                        "attention_id": [
+                            item["attention_id"]
+                            for item in expected_attention_items
+                        ],
+                        "deterministic_attention_text": [
+                            item[
+                                "deterministic_attention_text"
+                            ]
+                            for item in expected_attention_items
+                        ],
+                        "deterministic_brief_action": [
+                            clean_text(
+                                generation.get(
+                                    "action"
+                                )
+                            )
+                        ],
+                        "deterministic_brief_date": [
+                            clean_text(
+                                database.get(
+                                    "brief_date"
+                                )
+                            )
+                        ],
+                        "deterministic_record_status": [
+                            clean_text(
+                                database.get(
+                                    "record_status"
+                                )
+                            )
+                        ],
+                    },
                     mock_structured_output=(
                         mock_structured_output
                     ),

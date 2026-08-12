@@ -1330,6 +1330,12 @@ class MonitoringAgent(BaseAgent):
             )
         )
 
+        expected_business_health_status = (
+            determine_business_health_status(
+                deterministic_output
+            )
+        )
+
         mock_structured_output = (
             build_mock_monitoring_output(
                 deterministic_output
@@ -1361,6 +1367,11 @@ class MonitoringAgent(BaseAgent):
                 allowed_evidence_ids=(
                     allowed_evidence_ids
                 ),
+                allowed_references={
+                    "business_health_status": [
+                    expected_business_health_status,
+                    ],
+                },
                 mock_structured_output=(
                     mock_structured_output
                 ),

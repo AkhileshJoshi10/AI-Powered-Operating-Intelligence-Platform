@@ -1189,6 +1189,16 @@ class PriorityAgent(BaseAgent):
         allowed_issue_ids = get_allowed_priority_issue_ids(
             deterministic_output
         )
+        if not allowed_issue_ids:
+            raise LLMProviderResponseError(
+                "No deterministic priority issue IDs were available "
+                "for LLM explanation."
+            )
+
+        expected_review_first_issue_id = (
+        allowed_issue_ids[0]
+        )
+
         allowed_evidence_ids = get_allowed_priority_evidence_ids(
             deterministic_output
         )
@@ -1214,7 +1224,9 @@ class PriorityAgent(BaseAgent):
                     },
                     allowed_references={
                         "issue_id": allowed_issue_ids,
-                        "review_first_issue_id": allowed_issue_ids,
+                        "review_first_issue_id": [
+                            expected_review_first_issue_id,
+                        ],
                     },
                     output_validator=lambda output: (
                         validate_priority_explanation_facts(

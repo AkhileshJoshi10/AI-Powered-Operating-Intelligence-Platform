@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from json import JSONDecodeError
+import re
 from time import perf_counter
 from typing import Any
 
@@ -38,6 +39,186 @@ GROQ_MODEL_PRICING_USD_PER_MILLION: dict[
         0.30,
     ),
 }
+
+
+RESPONSE_JSON_SCHEMA_KEY = "response_json_schema"
+RESPONSE_JSON_SCHEMA_NAME_KEY = "response_json_schema_name"
+RESPONSE_JSON_SCHEMA_STRICT_KEY = "response_json_schema_strict"
+
+
+def normalize_json_schema_name(
+    value: object,
+) -> str:
+    """Create a provider-safe JSON Schema name."""
+
+    normalized = re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "_",
+        normalize_text(value),
+    ).strip("_")
+
+    return (
+        normalized[:64]
+        or "structured_response"
+    )
+
+
+def build_groq_response_format(
+    request: LLMRequest,
+) -> tuple[dict[str, Any] | None, str]:
+    """Resolve JSON Schema, JSON object, or normal text mode."""
+
+    if not request.require_json_object:
+        return None, "text"
+
+    raw_schema = request.metadata.get(
+        RESPONSE_JSON_SCHEMA_KEY
+    )
+
+    if isinstance(raw_schema, dict) and raw_schema:
+        schema_name = normalize_json_schema_name(
+            request.metadata.get(
+                RESPONSE_JSON_SCHEMA_NAME_KEY
+            )
+            or request.response_schema_name
+            or "structured_response"
+        )
+
+        strict_schema = bool(
+            request.metadata.get(
+                RESPONSE_JSON_SCHEMA_STRICT_KEY,
+                False,
+            )
+        )
+
+        return (
+            {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": strict_schema,
+                    "schema": raw_schema,
+                },
+            },
+            "json_schema_strict"
+            if strict_schema
+            else "json_schema_best_effort",
+        )
+
+    return (
+        {
+            "type": "json_object",
+        },
+        "json_object",
+    )
+
+
+def get_safe_groq_error_detail(
+    error: object,
+) -> str:
+    """Extract one bounded provider error message without request data."""
+
+    body = getattr(
+        error,
+        "body",
+        None,
+    )
+    candidate: object = ""
+
+    if isinstance(
+        body,
+        dict,
+    ):
+        nested_error = body.get(
+            "error"
+        )
+
+        if isinstance(
+            nested_error,
+            dict,
+        ):
+            candidate = nested_error.get(
+                "message",
+                "",
+            )
+        else:
+            candidate = body.get(
+                "message",
+                "",
+            )
+
+    if not candidate:
+        candidate = getattr(
+            error,
+            "message",
+            "",
+        )
+
+    return normalize_text(
+        candidate
+    )[:1000]
+
+
+MAXIMUM_GROQ_RETRY_AFTER_SECONDS = 300.0
+
+
+def get_groq_retry_after_seconds(
+    error: object,
+) -> float | None:
+    """Read Groq's HTTP retry-after header without exposing secrets."""
+
+    response = getattr(
+        error,
+        "response",
+        None,
+    )
+    headers = getattr(
+        response,
+        "headers",
+        None,
+    )
+
+    if headers is None:
+        return None
+
+    raw_value: object | None = None
+
+    try:
+        raw_value = headers.get(
+            "retry-after"
+        )
+
+        if raw_value is None:
+            raw_value = headers.get(
+                "Retry-After"
+            )
+
+    except Exception:
+        return None
+
+    if raw_value is None:
+        return None
+
+    try:
+        retry_after = float(
+            str(
+                raw_value
+            ).strip()
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if retry_after < 0:
+        return None
+
+    return min(
+        retry_after,
+        MAXIMUM_GROQ_RETRY_AFTER_SECONDS,
+    )
 
 
 def normalize_text(
@@ -130,9 +311,9 @@ def convert_messages_for_groq(
     for message in request.messages:
         if message.role == "tool":
             raise LLMRequestValidationError(
-                "Groq tool-result messages are not enabled "
-                "during Day 35. Controlled tool execution "
-                "will be added during the MCP stage."
+                "Groq tool-result messages are not enabled while "
+                "controlled tool execution is disabled. Tool use will "
+                "be added in the controlled-tool stage."
             )
 
         converted_message = {
@@ -238,8 +419,8 @@ def map_finish_reason(
         "function_call",
     }:
         raise LLMProviderResponseError(
-            "Groq returned a tool call while tools are "
-            "disabled for Day 35."
+            "Groq returned a tool call while controlled tools are "
+            "disabled."
         )
 
     raise LLMProviderResponseError(
@@ -396,12 +577,31 @@ class GroqProvider(BaseLLMProvider):
             "stream": False,
         }
 
-        if request.require_json_object:
+        if model_name.casefold() in {
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
+        }:
+            # These business-language enhancement tasks do not need
+            # medium/high reasoning effort. Low effort reduces avoidable
+            # reasoning-token usage while retaining the GPT-OSS model.
+            request_arguments[
+                "reasoning_effort"
+            ] = "low"
+            request_arguments[
+                "include_reasoning"
+            ] = False
+
+        (
+            response_format,
+            response_format_mode,
+        ) = build_groq_response_format(
+            request
+        )
+
+        if response_format is not None:
             request_arguments[
                 "response_format"
-            ] = {
-                "type": "json_object",
-            }
+            ] = response_format
 
         try:
             completion = (
@@ -419,9 +619,36 @@ class GroqProvider(BaseLLMProvider):
             ) from error
 
         except groq.RateLimitError as error:
-            raise LLMRateLimitError(
+            retry_after_seconds = (
+                get_groq_retry_after_seconds(
+                    error
+                )
+            )
+
+            message = (
                 "Groq rate limiting prevented the request."
-            ) from error
+            )
+
+            if retry_after_seconds is not None:
+                message += (
+                    " Retry after "
+                    f"{retry_after_seconds:g} seconds."
+                )
+
+            controlled_error = (
+                LLMRateLimitError(
+                    message
+                )
+            )
+
+            if retry_after_seconds is not None:
+                setattr(
+                    controlled_error,
+                    "retry_after_seconds",
+                    retry_after_seconds,
+                )
+
+            raise controlled_error from error
 
         except groq.APITimeoutError as error:
             raise LLMTimeoutError(
@@ -449,6 +676,16 @@ class GroqProvider(BaseLLMProvider):
                     "",
                 )
             )
+            error_detail = (
+                get_safe_groq_error_detail(
+                    error
+                )
+            )
+            detail_suffix = (
+                f" Provider detail: {error_detail}"
+                if error_detail
+                else ""
+            )
             request_suffix = (
                 f" Request ID: {request_id}."
                 if request_id
@@ -464,12 +701,14 @@ class GroqProvider(BaseLLMProvider):
             }:
                 raise LLMRequestValidationError(
                     "Groq rejected the request with HTTP "
-                    f"{status_code}.{request_suffix}"
+                    f"{status_code}.{detail_suffix}"
+                    f"{request_suffix}"
                 ) from error
 
             raise LLMProviderResponseError(
                 "Groq returned an unsuccessful API status "
-                f"({status_code}).{request_suffix}"
+                f"({status_code}).{detail_suffix}"
+                f"{request_suffix}"
             ) from error
 
         except groq.APIError as error:
@@ -678,7 +917,20 @@ class GroqProvider(BaseLLMProvider):
                     request.response_schema_name
                 ),
                 "json_object_mode": (
-                    request.require_json_object
+                    response_format_mode
+                    == "json_object"
+                ),
+                "response_format_mode": (
+                    response_format_mode
+                ),
+                "json_schema_strict": (
+                    True
+                    if response_format_mode
+                    == "json_schema_strict"
+                    else False
+                    if response_format_mode
+                    == "json_schema_best_effort"
+                    else None
                 ),
                 "pricing_model": model_name,
                 "input_price_per_million_usd": (

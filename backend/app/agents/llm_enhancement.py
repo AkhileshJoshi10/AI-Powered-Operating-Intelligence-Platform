@@ -1485,6 +1485,272 @@ def build_failed_execution_metadata(
     )
 
 
+def apply_enum_to_schema_property(
+    property_schema: dict[str, Any],
+    allowed_values: list[str],
+) -> None:
+    """Constrain one string or string-array property to exact values."""
+
+    normalized_values = normalize_text_list(
+        list(
+            allowed_values
+        )
+    )
+
+    # JSON Schema enum must contain at least one value. When the
+    # deterministic allowlist is empty, the post-response validator
+    # remains authoritative and will reject any invented reference.
+    if not normalized_values:
+        return
+
+    if (
+        property_schema.get(
+            "type"
+        )
+        == "array"
+    ):
+        items = property_schema.get(
+            "items"
+        )
+
+        if isinstance(
+            items,
+            dict,
+        ):
+            items["enum"] = normalized_values
+
+        return
+
+    property_schema[
+        "enum"
+    ] = normalized_values
+
+
+def constrain_response_json_schema(
+    *,
+    response_schema: dict[str, Any],
+    allowed_evidence_ids: list[str],
+    allowed_references: dict[
+        str,
+        list[str],
+    ] | None,
+) -> dict[str, Any]:
+    """
+    Add runtime identifier allowlists to the provider JSON Schema.
+
+    Pydantic and the post-response factual validators remain
+    authoritative. These enum constraints make it substantially less
+    likely that a real model abbreviates, rewrites, or invents IDs.
+    """
+
+    constrained_schema = deepcopy(
+        response_schema
+    )
+    normalized_references = {
+        str(field_name): (
+            normalize_text_list(
+                list(values)
+            )
+        )
+        for field_name, values in (
+            allowed_references
+            or {}
+        ).items()
+    }
+
+    def walk(
+        node: object,
+    ) -> None:
+        if isinstance(
+            node,
+            dict,
+        ):
+            properties = node.get(
+                "properties"
+            )
+
+            if isinstance(
+                properties,
+                dict,
+            ):
+                for (
+                    field_name,
+                    property_schema,
+                ) in properties.items():
+                    if not isinstance(
+                        property_schema,
+                        dict,
+                    ):
+                        continue
+
+                    if (
+                        field_name
+                        == "evidence_ids"
+                    ):
+                        apply_enum_to_schema_property(
+                            property_schema,
+                            allowed_evidence_ids,
+                        )
+
+                    if (
+                        field_name
+                        in normalized_references
+                    ):
+                        apply_enum_to_schema_property(
+                            property_schema,
+                            normalized_references[
+                                field_name
+                            ],
+                        )
+
+            for child in node.values():
+                walk(
+                    child
+                )
+
+        elif isinstance(
+            node,
+            list,
+        ):
+            for child in node:
+                walk(
+                    child
+                )
+
+    walk(
+        constrained_schema
+    )
+
+    return constrained_schema
+
+
+
+STRICT_SCHEMA_REMOVED_KEYWORDS = {
+    "default",
+    "examples",
+    "minLength",
+    "maxLength",
+    "minItems",
+    "maxItems",
+}
+
+
+def prepare_strict_response_json_schema(
+    response_schema: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Convert a Pydantic JSON Schema to the strict Structured Outputs shape.
+
+    Strict provider schemas require every object property to be required
+    and every object to reject additional properties. Pydantic runtime
+    validation remains authoritative for validation rules intentionally
+    removed from the provider schema.
+    """
+
+    strict_schema = deepcopy(
+        response_schema
+    )
+
+    def walk(
+        node: object,
+    ) -> None:
+        if isinstance(
+            node,
+            dict,
+        ):
+            for keyword in STRICT_SCHEMA_REMOVED_KEYWORDS:
+                node.pop(
+                    keyword,
+                    None,
+                )
+
+            properties = node.get(
+                "properties"
+            )
+
+            if isinstance(
+                properties,
+                dict,
+            ):
+                node[
+                    "required"
+                ] = list(
+                    properties.keys()
+                )
+                node[
+                    "additionalProperties"
+                ] = False
+
+            for child in list(
+                node.values()
+            ):
+                walk(
+                    child
+                )
+
+        elif isinstance(
+            node,
+            list,
+        ):
+            for child in node:
+                walk(
+                    child
+                )
+
+    walk(
+        strict_schema
+    )
+
+    return strict_schema
+
+def build_llm_control_contract(
+    *,
+    allowed_evidence_ids: list[str],
+    allowed_references: dict[
+        str,
+        list[str],
+    ] | None,
+) -> dict[str, Any]:
+    """Build explicit prompt-visible rules for controlled identifiers."""
+
+    return {
+        "identifier_rule": (
+            "For every evidence or controlled reference identifier, "
+            "copy one of the allowed strings exactly as supplied. "
+            "Do not shorten, abbreviate, rewrite, infer, or invent "
+            "an identifier. If no allowed identifier supports a "
+            "statement, omit the identifier and use the appropriate "
+            "missing-evidence warning."
+        ),
+        "deterministic_value_rule": (
+            "Any output field whose name begins with deterministic_ "
+            "must reproduce the corresponding deterministic input "
+            "fact exactly. Do not recalculate, improve, normalize, "
+            "round, reschedule, reinterpret, or replace deterministic "
+            "scores, ranks, dates, statuses, categories, owners, "
+            "titles, summaries, counts, or action text."
+        ),
+        "allowed_evidence_ids": (
+            normalize_text_list(
+                list(
+                    allowed_evidence_ids
+                )
+            )
+        ),
+        "allowed_references": {
+            str(field_name): (
+                normalize_text_list(
+                    list(values)
+                )
+            )
+            for field_name, values in (
+                allowed_references
+                or {}
+            ).items()
+        },
+    }
+
+
 async def run_structured_enhancement(
     *,
     provider: BaseLLMProvider,
@@ -1527,10 +1793,24 @@ async def run_structured_enhancement(
         prompt_version,
     )
 
+    prompt_context = deepcopy(
+        validated_context
+    )
+    prompt_context[
+        "_llm_control_contract"
+    ] = build_llm_control_contract(
+        allowed_evidence_ids=(
+            allowed_evidence_ids
+        ),
+        allowed_references=(
+            allowed_references
+        ),
+    )
+
     messages = prompt.render(
         {
             "validated_context_json": (
-                validated_context
+                prompt_context
             )
         }
     )
@@ -1539,6 +1819,36 @@ async def run_structured_enhancement(
         request_metadata
         or {}
     )
+
+    # Carry the concrete response contract with the provider-independent
+    # request. Runtime identifier allowlists are added as enum constraints
+    # so a supporting provider sees the same exact references enforced by
+    # the post-response factual validators.
+    constrained_schema = (
+        constrain_response_json_schema(
+            response_schema=(
+                response_model.model_json_schema()
+            ),
+            allowed_evidence_ids=(
+                allowed_evidence_ids
+            ),
+            allowed_references=(
+                allowed_references
+            ),
+        )
+    )
+
+    metadata[
+        "response_json_schema"
+    ] = prepare_strict_response_json_schema(
+        constrained_schema
+    )
+    metadata[
+        "response_json_schema_name"
+    ] = response_model.__name__
+    metadata[
+        "response_json_schema_strict"
+    ] = True
 
     if (
         provider.provider_name == "mock"
@@ -1597,10 +1907,60 @@ async def run_structured_enhancement(
         )
 
     except ValidationError as error:
+        validation_issues: list[str] = []
+
+        for issue in error.errors(
+            include_url=False,
+            include_input=False,
+        ):
+            location = ".".join(
+                str(part)
+                for part in issue.get(
+                    "loc",
+                (),
+                )
+            )
+
+            if not location:
+                location = "<root>"
+
+            error_type = normalize_text(
+                issue.get(
+                    "type"
+                )
+            )
+
+            message = normalize_text(
+                issue.get(
+                    "msg"
+                )
+            )
+
+            validation_issues.append(
+                f"{location}: {message}"
+                + (
+                    f" [{error_type}]"
+                    if error_type
+                    else ""
+                )
+            )
+
+            if len(validation_issues) >= 8:
+                break
+
+        validation_detail = "; ".join(
+            validation_issues
+        )
+
         controlled_error = (
             LLMProviderResponseError(
                 "The LLM response did not match "
-                f"{response_model.__name__}."
+                f"{response_model.__name__}"
+                + (
+                    f": {validation_detail}"
+                    if validation_detail
+                    else "."
+                )
             )
         )
 

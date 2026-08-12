@@ -1285,10 +1285,40 @@ class RootCauseAgent(BaseAgent):
             allowed_evidence_ids = get_allowed_root_cause_evidence_ids(
                 deterministic_output
             )
-            mock_structured_output = (
+
+            expected_structured_output = (
                 build_mock_root_cause_output(
                     deterministic_output
                 )
+            )
+
+            validated_context[
+                "required_output_contract"
+            ] = {
+                "instruction": (
+                    "Return every field shown in output_template. "
+                    "Do not omit any top-level or nested field. "
+                    "Preserve deterministic issue IDs, categories, "
+                    "summaries, confidence values, evidence IDs, "
+                    "contributing factors, and human-review flags "
+                    "exactly. Only improve manager-facing explanatory "
+                    "wording where allowed."
+                ),
+                "required_top_level_fields": [
+                    "summary",
+                    "root_cause_explanations",
+                    "evidence_ids",
+                    "confidence_score",
+                    "missing_evidence_warnings",
+                    "human_review_required",
+                ],
+                "output_template": (
+                    expected_structured_output
+                ),
+            }
+
+            mock_structured_output = (
+                expected_structured_output
                 if provider.provider_name == "mock"
                 else None
             )

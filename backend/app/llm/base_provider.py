@@ -34,8 +34,10 @@ EMAIL_PATTERN = re.compile(
     r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 )
 PHONE_PATTERN = re.compile(
-    r"(?<!\d)(?!\d{4}-\d{2}-\d{2}(?:T|\s|$))"
-    r"(?:\+?\d[\d\s()-]{7,}\d)(?!\d)"
+    r"(?<![A-Za-z0-9_-])"
+    r"(?!\d{4}-\d{2}-\d{2}(?!\d))"
+    r"(?:\+?\d[\d\s()-]{7,}\d)"
+    r"(?![A-Za-z0-9_-])"
 )
 
 
@@ -311,9 +313,35 @@ class BaseLLMProvider(ABC):
             ):
                 raise current_error
 
-            retry_delay = (
+            exponential_retry_delay = (
                 self.config.retry_backoff_seconds
                 * (2 ** attempt_number)
+            )
+
+            raw_provider_retry_after = getattr(
+                current_error,
+                "retry_after_seconds",
+                0.0,
+            )
+
+            try:
+                provider_retry_after = max(
+                    0.0,
+                    float(
+                        raw_provider_retry_after
+                        or 0.0
+                    ),
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                provider_retry_after = 0.0
+
+            retry_delay = max(
+                exponential_retry_delay,
+                provider_retry_after,
             )
 
             if retry_delay > 0:

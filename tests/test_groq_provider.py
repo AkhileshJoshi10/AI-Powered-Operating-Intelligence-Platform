@@ -19,6 +19,7 @@ from backend.app.llm import (
 )
 from backend.app.llm.groq_provider import (
     estimate_groq_cost_usd,
+    get_groq_retry_after_seconds,
 )
 
 
@@ -292,6 +293,123 @@ def test_groq_provider_returns_shared_response(
     }
 
 
+def test_groq_provider_uses_json_schema_contract_when_supplied(
+) -> None:
+    """A response contract should use Groq Structured Outputs."""
+
+    fake_client = FakeGroqClient(
+        build_completion()
+    )
+    provider = GroqProvider(
+        build_config(),
+        client=fake_client,
+    )
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+            },
+        },
+        "required": [
+            "summary",
+        ],
+        "additionalProperties": False,
+    }
+
+    asyncio.run(
+        provider.generate(
+            build_request(
+                metadata={
+                    "response_json_schema": response_schema,
+                    "response_json_schema_name": (
+                        "ExecutiveBriefEnhancementV1"
+                    ),
+                    "response_json_schema_strict": True,
+                }
+            )
+        )
+    )
+
+    request_arguments = (
+        fake_client
+        .chat
+        .completions
+        .calls[0]
+    )
+
+    assert request_arguments[
+        "response_format"
+    ] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "ExecutiveBriefEnhancementV1",
+            "strict": True,
+            "schema": response_schema,
+        },
+    }
+
+    assert (
+        request_arguments[
+            "reasoning_effort"
+        ]
+        == "low"
+    )
+    assert (
+        request_arguments[
+            "include_reasoning"
+        ]
+        is False
+    )
+
+
+def test_groq_provider_normalizes_json_schema_name(
+) -> None:
+    """Structured-output schema names should be provider-safe."""
+
+    fake_client = FakeGroqClient(
+        build_completion()
+    )
+    provider = GroqProvider(
+        build_config(),
+        client=fake_client,
+    )
+
+    asyncio.run(
+        provider.generate(
+            build_request(
+                metadata={
+                    "response_json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {
+                                "type": "string",
+                            },
+                        },
+                    },
+                    "response_json_schema_name": (
+                        "Executive Brief / V1"
+                    ),
+                }
+            )
+        )
+    )
+
+    response_format = (
+        fake_client
+        .chat
+        .completions
+        .calls[0][
+            "response_format"
+        ]
+    )
+
+    assert response_format[
+        "json_schema"
+    ]["name"] == "Executive_Brief_V1"
+
+
 def test_groq_provider_masks_sensitive_input_before_client_call(
 ) -> None:
     """Secrets must be masked before networking."""
@@ -425,7 +543,7 @@ def test_groq_provider_rejects_tool_role_until_mcp_stage(
 
     with pytest.raises(
         LLMRequestValidationError,
-        match="MCP",
+        match="controlled tool execution is disabled",
     ):
         asyncio.run(
             provider.generate(
@@ -501,4 +619,40 @@ def test_groq_provider_rejects_preflight_cost_over_limit(
         .completions
         .calls
         == []
+    )
+
+
+
+def test_groq_retry_after_header_is_parsed_and_capped(
+) -> None:
+    """Groq 429 retry timing should be available to shared retries."""
+
+    error = SimpleNamespace(
+        response=SimpleNamespace(
+            headers={
+                "retry-after": "12.5",
+            }
+        )
+    )
+
+    assert (
+        get_groq_retry_after_seconds(
+            error
+        )
+        == 12.5
+    )
+
+    long_error = SimpleNamespace(
+        response=SimpleNamespace(
+            headers={
+                "retry-after": "999",
+            }
+        )
+    )
+
+    assert (
+        get_groq_retry_after_seconds(
+            long_error
+        )
+        == 300.0
     )

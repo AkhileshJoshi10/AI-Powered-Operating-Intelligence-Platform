@@ -231,4 +231,18 @@ class Settings:
     )
 
 
+    agent_knowledge_enabled: bool = read_boolean(
+        "AGENT_KNOWLEDGE_ENABLED",
+        True,
+    )
+    agent_knowledge_search_limit: int = read_integer(
+        "AGENT_KNOWLEDGE_SEARCH_LIMIT",
+        4,
+    )
+    agent_knowledge_max_context_tokens: int = read_integer(
+        "AGENT_KNOWLEDGE_MAX_CONTEXT_TOKENS",
+        1200,
+    )
+
+
 settings = Settings()

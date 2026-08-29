@@ -468,6 +468,10 @@ class RootCauseIssueExplanationV1(BaseModel):
         default_factory=list,
         max_length=100,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
     confidence_score: float = Field(
         ge=0,
         le=100,
@@ -507,6 +511,7 @@ class RootCauseIssueExplanationV1(BaseModel):
     @field_validator(
         "likely_contributing_factors",
         "evidence_ids",
+        "knowledge_citation_ids",
         "missing_evidence_warnings",
         "unsupported_claims_rejected",
     )
@@ -552,6 +557,10 @@ class RootCauseExplanationV1(BaseModel):
         default_factory=list,
         max_length=300,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
     confidence_score: float = Field(
         ge=0,
         le=100,
@@ -581,6 +590,7 @@ class RootCauseExplanationV1(BaseModel):
 
     @field_validator(
         "evidence_ids",
+        "knowledge_citation_ids",
         "missing_evidence_warnings",
     )
     @classmethod
@@ -625,6 +635,27 @@ class RootCauseExplanationV1(BaseModel):
                 "top-level evidence_ids list: "
                 + ", ".join(
                     missing_ids
+                )
+            )
+
+        nested_knowledge_citation_ids = {
+            citation_id
+            for explanation in self.root_cause_explanations
+            for citation_id in explanation.knowledge_citation_ids
+        }
+
+        missing_knowledge_citation_ids = sorted(
+            nested_knowledge_citation_ids.difference(
+                self.knowledge_citation_ids
+            )
+        )
+
+        if missing_knowledge_citation_ids:
+            raise ValueError(
+                "Root-cause knowledge citation IDs must also appear "
+                "in the top-level knowledge_citation_ids list: "
+                + ", ".join(
+                    missing_knowledge_citation_ids
                 )
             )
 
@@ -726,6 +757,10 @@ class RecommendationIssueEnhancementV1(BaseModel):
         min_length=1,
         max_length=4000,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
     missing_information_warnings: list[str] = Field(
         default_factory=list,
         max_length=50,
@@ -760,6 +795,7 @@ class RecommendationIssueEnhancementV1(BaseModel):
         return normalized
 
     @field_validator(
+        "knowledge_citation_ids",
         "missing_information_warnings",
     )
     @classmethod
@@ -838,6 +874,10 @@ class RecommendationEnhancementV1(BaseModel):
         ge=0,
         le=100,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
     missing_information_warnings: list[str] = Field(
         default_factory=list,
         max_length=100,
@@ -864,6 +904,7 @@ class RecommendationEnhancementV1(BaseModel):
         return normalized
 
     @field_validator(
+        "knowledge_citation_ids",
         "missing_information_warnings",
     )
     @classmethod
@@ -899,6 +940,27 @@ class RecommendationEnhancementV1(BaseModel):
         if self.recommendations_approved:
             raise ValueError(
                 "The LLM cannot approve recommendations."
+            )
+
+        nested_knowledge_citation_ids = {
+            citation_id
+            for enhancement in self.recommendation_enhancements
+            for citation_id in enhancement.knowledge_citation_ids
+        }
+
+        missing_knowledge_citation_ids = sorted(
+            nested_knowledge_citation_ids.difference(
+                self.knowledge_citation_ids
+            )
+        )
+
+        if missing_knowledge_citation_ids:
+            raise ValueError(
+                "Recommendation knowledge citation IDs must also "
+                "appear in the top-level knowledge_citation_ids list: "
+                + ", ".join(
+                    missing_knowledge_citation_ids
+                )
             )
 
         if self.tasks_created:
@@ -963,6 +1025,10 @@ class ExecutiveBriefAttentionPointV1(BaseModel):
         default_factory=list,
         max_length=100,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
 
     @field_validator(
         "attention_id",
@@ -985,9 +1051,12 @@ class ExecutiveBriefAttentionPointV1(BaseModel):
 
         return normalized
 
-    @field_validator("evidence_ids")
+    @field_validator(
+        "evidence_ids",
+        "knowledge_citation_ids",
+    )
     @classmethod
-    def normalize_evidence_ids(
+    def normalize_reference_ids(
         cls,
         values: list[str],
     ) -> list[str]:
@@ -1038,6 +1107,10 @@ class ExecutiveBriefEnhancementV1(BaseModel):
         default_factory=list,
         max_length=400,
     )
+    knowledge_citation_ids: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
     comparison_available: bool = False
     change_summary: str = Field(
         min_length=1,
@@ -1078,6 +1151,7 @@ class ExecutiveBriefEnhancementV1(BaseModel):
 
     @field_validator(
         "evidence_ids",
+        "knowledge_citation_ids",
         "missing_evidence_warnings",
     )
     @classmethod
@@ -1122,6 +1196,27 @@ class ExecutiveBriefEnhancementV1(BaseModel):
                 "appear in the top-level evidence_ids list: "
                 + ", ".join(
                     missing_ids
+                )
+            )
+
+        nested_knowledge_citation_ids = {
+            citation_id
+            for attention in self.management_attention
+            for citation_id in attention.knowledge_citation_ids
+        }
+
+        missing_knowledge_citation_ids = sorted(
+            nested_knowledge_citation_ids.difference(
+                self.knowledge_citation_ids
+            )
+        )
+
+        if missing_knowledge_citation_ids:
+            raise ValueError(
+                "Executive Brief knowledge citation IDs must also "
+                "appear in the top-level knowledge_citation_ids list: "
+                + ", ".join(
+                    missing_knowledge_citation_ids
                 )
             )
 
@@ -1729,6 +1824,13 @@ def build_llm_control_contract(
             "round, reschedule, reinterpret, or replace deterministic "
             "scores, ranks, dates, statuses, categories, owners, "
             "titles, summaries, counts, or action text."
+        ),
+        "evidence_and_knowledge_reference_rule": (
+            "Keep deterministic business evidence identifiers in "
+            "evidence_ids. Keep retrieved document references in "
+            "knowledge_citation_ids. Never place a knowledge citation "
+            "inside evidence_ids and never place a deterministic "
+            "business evidence identifier inside knowledge_citation_ids."
         ),
         "allowed_evidence_ids": (
             normalize_text_list(

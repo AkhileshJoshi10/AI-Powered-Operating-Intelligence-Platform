@@ -274,9 +274,86 @@ def configure_recommendation_pipeline(
         fake_save,
     )
 
+    knowledge_calls: list[
+        dict[str, Any]
+    ] = []
+
+    def fake_retrieve_agent_knowledge(
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        knowledge_calls.append(
+            dict(
+                kwargs
+            )
+        )
+
+        return {
+            "status": "success",
+            "enabled": True,
+            "query": str(
+                kwargs.get(
+                    "query",
+                    "",
+                )
+            ),
+            "retrieval_method": (
+                "PostgreSQL Full-Text Search"
+            ),
+            "retrieved_result_count": 2,
+            "included_result_count": 2,
+            "context_token_estimate": 90,
+            "max_context_tokens": 1200,
+            "citations": [
+                "DOC-7-V1:CHUNK-1",
+                "DOC-9-V2:CHUNK-3",
+            ],
+            "knowledge_context": [
+                {
+                    "citation_id": "DOC-7-V1:CHUNK-1",
+                    "title": "Inventory Reorder Policy",
+                    "document_type": "Policy",
+                    "access_scope": "Internal",
+                    "source_date": None,
+                    "section_title": "Replenishment",
+                    "content": (
+                        "Managers must review replenishment and "
+                        "vendor performance before corrective action."
+                    ),
+                    "relevance_score": 0.9,
+                    "token_estimate": 45,
+                },
+                {
+                    "citation_id": "DOC-9-V2:CHUNK-3",
+                    "title": "Vendor Delivery SLA",
+                    "document_type": "Vendor Contract",
+                    "access_scope": "Internal",
+                    "source_date": None,
+                    "section_title": "Escalation",
+                    "content": (
+                        "Repeated delays require procurement review "
+                        "before supplier escalation."
+                    ),
+                    "relevance_score": 0.8,
+                    "token_estimate": 45,
+                },
+            ],
+            "safety_policy": {
+                "retrieved_text_is_untrusted": True,
+                "knowledge_claims_require_supplied_citation_ids": True,
+            },
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "retrieve_agent_knowledge",
+        fake_retrieve_agent_knowledge,
+    )
+
     return {
         "recommendations": recommendations,
         "persistence_calls": persistence_calls,
+        "knowledge_calls": knowledge_calls,
     }
 
 
@@ -285,7 +362,7 @@ def test_recommendation_agent_remains_deterministic_when_llm_disabled(
 ) -> None:
     """A disabled provider should preserve deterministic actions."""
 
-    configure_recommendation_pipeline(
+    pipeline_data = configure_recommendation_pipeline(
         monkeypatch
     )
 
@@ -333,6 +410,9 @@ def test_recommendation_agent_remains_deterministic_when_llm_disabled(
         "automatic_approval_performed": False,
         "automatic_task_creation_performed": False,
     }
+    assert pipeline_data[
+        "knowledge_calls"
+    ] == []
 
 
 def test_recommendation_agent_adds_grounded_llm_enhancement(
@@ -340,7 +420,7 @@ def test_recommendation_agent_adds_grounded_llm_enhancement(
 ) -> None:
     """Mock enhancement should preserve recommendation facts."""
 
-    configure_recommendation_pipeline(
+    pipeline_data = configure_recommendation_pipeline(
         monkeypatch
     )
 
@@ -442,6 +522,39 @@ def test_recommendation_agent_adds_grounded_llm_enhancement(
         "ISSUE-HIGH-001:ACTION-03",
         "ISSUE-HIGH-001:ACTION-04",
     ]
+    assert items[0][
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["status"] == "success"
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+    assert result.run_metadata[
+        "knowledge_retrieval"
+    ]["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+    assert len(
+        pipeline_data[
+            "knowledge_calls"
+        ]
+    ) == 1
+    assert pipeline_data[
+        "knowledge_calls"
+    ][0][
+        "allowed_access_scopes"
+    ] == (
+        "Internal",
+    )
 
 
 def test_recommendation_agent_falls_back_after_llm_timeout(
@@ -704,3 +817,263 @@ def test_recommendation_agent_rejects_automatic_approval_or_task_creation(
         ]
         is False
     )
+
+def test_recommendation_agent_rejects_invented_knowledge_citation(
+    monkeypatch: Any,
+) -> None:
+    """Knowledge citations must come only from safe retrieval."""
+
+    configure_recommendation_pipeline(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = [
+            "DOC-999-V1:CHUNK-99"
+        ]
+
+    provider = MutatingMockProvider(
+        build_provider_config(),
+        mutate,
+    )
+    context = AgentContext(
+        run_type=(
+            "recommendation-invented-knowledge-citation-test"
+        ),
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent(
+            llm_provider=provider
+        ).execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "unsupported controlled identifiers"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert (
+        "knowledge_citation_ids"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+
+
+def test_recommendation_agent_continues_when_knowledge_retrieval_fails(
+    monkeypatch: Any,
+) -> None:
+    """Optional RAG failure must not replace deterministic actions."""
+
+    configure_recommendation_pipeline(
+        monkeypatch
+    )
+
+    def fail_retrieval(
+        **_: Any,
+    ) -> dict[str, Any]:
+        raise RuntimeError(
+            "Simulated knowledge database failure."
+        )
+
+    monkeypatch.setattr(
+        recommendation_module,
+        "retrieve_agent_knowledge",
+        fail_retrieval,
+    )
+
+    provider = MockLLMProvider(
+        build_provider_config()
+    )
+    context = AgentContext(
+        run_type=(
+            "recommendation-knowledge-unavailable-test"
+        ),
+        input_data={
+            "recommendation_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent(
+            llm_provider=provider
+        ).execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["status"] == "unavailable"
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["error_type"] == "RuntimeError"
+    assert any(
+        "deterministic recommendation remains authoritative"
+        in warning
+        for warning in enhancement[
+            "knowledge_retrieval"
+        ]["warnings"]
+    )
+
+
+def test_recommendation_agent_uses_knowledge_citation_when_required(
+    monkeypatch: Any,
+) -> None:
+    """Controlled RAG mode should carry retrieved citations."""
+
+    configure_recommendation_pipeline(
+        monkeypatch
+    )
+
+    provider = MockLLMProvider(
+        build_provider_config()
+    )
+    context = AgentContext(
+        run_type=(
+            "recommendation-required-knowledge-citation-success-test"
+        ),
+        input_data={
+            "recommendation_limit": 2,
+            "require_knowledge_citation": True,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent(
+            llm_provider=provider
+        ).execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+
+    for item in enhancement[
+        "recommendation_enhancements"
+    ]:
+        assert item[
+            "knowledge_citation_ids"
+        ] == [
+            "DOC-7-V1:CHUNK-1",
+            "DOC-9-V2:CHUNK-3",
+        ]
+
+
+def test_recommendation_agent_requires_knowledge_citation_when_requested(
+    monkeypatch: Any,
+) -> None:
+    """Controlled RAG mode must actually cite retrieved knowledge."""
+
+    configure_recommendation_pipeline(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = []
+
+        for item in output.get(
+            "recommendation_enhancements",
+            [],
+        ):
+            if isinstance(
+                item,
+                dict,
+            ):
+                item[
+                    "knowledge_citation_ids"
+                ] = []
+
+    provider = MutatingMockProvider(
+        build_provider_config(),
+        mutate,
+    )
+    context = AgentContext(
+        run_type=(
+            "recommendation-required-knowledge-citation-test"
+        ),
+        input_data={
+            "recommendation_limit": 2,
+            "require_knowledge_citation": True,
+        },
+    )
+
+    result = asyncio.run(
+        RecommendationAgent(
+            llm_provider=provider
+        ).execute(
+            context
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "required at least one retrieved knowledge citation"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+

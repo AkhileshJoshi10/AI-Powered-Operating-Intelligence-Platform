@@ -255,10 +255,19 @@ def configure_brief_service(
     monkeypatch: Any,
     *,
     action: str = "created",
+    knowledge_calls: list[
+        dict[str, Any]
+    ] | None = None,
 ) -> list[str]:
-    """Configure the deterministic service and capture its calls."""
+    """Configure deterministic brief and safe knowledge dependencies."""
 
     calls: list[str] = []
+
+    captured_knowledge_calls = (
+        knowledge_calls
+        if knowledge_calls is not None
+        else []
+    )
 
     def fake_generate(
     ) -> dict[str, Any]:
@@ -276,6 +285,66 @@ def configure_brief_service(
         fake_generate,
     )
 
+    def fake_retrieve_agent_knowledge(
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        captured_knowledge_calls.append(
+            dict(
+                kwargs
+            )
+        )
+
+        return {
+            "status": "success",
+            "enabled": True,
+            "query": str(
+                kwargs.get(
+                    "query",
+                    "",
+                )
+            ),
+            "retrieval_method": (
+                "PostgreSQL Full-Text Search"
+            ),
+            "retrieved_result_count": 1,
+            "included_result_count": 1,
+            "context_token_estimate": 80,
+            "max_context_tokens": 600,
+            "citations": [
+                "DOC-7-V1:CHUNK-1",
+            ],
+            "knowledge_context": [
+                {
+                    "citation_id": "DOC-7-V1:CHUNK-1",
+                    "title": (
+                        "Inventory and Vendor Escalation Policy"
+                    ),
+                    "document_type": "Policy",
+                    "access_scope": "Internal",
+                    "source_date": None,
+                    "section_title": "Management Review",
+                    "content": (
+                        "Management should review product "
+                        "availability and supplier performance "
+                        "before corrective action."
+                    ),
+                    "relevance_score": 0.9,
+                    "token_estimate": 80,
+                },
+            ],
+            "safety_policy": {
+                "retrieved_text_is_untrusted": True,
+                "knowledge_claims_require_supplied_citation_ids": True,
+            },
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        brief_module,
+        "retrieve_agent_knowledge",
+        fake_retrieve_agent_knowledge,
+    )
+
     return calls
 
 
@@ -284,8 +353,13 @@ def test_executive_brief_agent_remains_deterministic_when_llm_disabled(
 ) -> None:
     """A disabled provider should preserve the persisted brief."""
 
+    knowledge_calls: list[
+        dict[str, Any]
+    ] = []
+
     calls = configure_brief_service(
-        monkeypatch
+        monkeypatch,
+        knowledge_calls=knowledge_calls,
     )
 
     result = asyncio.run(
@@ -317,6 +391,7 @@ def test_executive_brief_agent_remains_deterministic_when_llm_disabled(
     }
     assert result.output_data["database"]["brief_id"] == 11
     assert calls == ["created"]
+    assert knowledge_calls == []
 
 
 def test_executive_brief_agent_adds_grounded_llm_enhancement(
@@ -324,8 +399,13 @@ def test_executive_brief_agent_adds_grounded_llm_enhancement(
 ) -> None:
     """Mock enhancement should preserve deterministic brief facts."""
 
+    knowledge_calls: list[
+        dict[str, Any]
+    ] = []
+
     calls = configure_brief_service(
-        monkeypatch
+        monkeypatch,
+        knowledge_calls=knowledge_calls,
     )
 
     result = asyncio.run(
@@ -370,6 +450,47 @@ def test_executive_brief_agent_adds_grounded_llm_enhancement(
     assert enhancement["database_update_performed"] is False
     assert enhancement["workflow_action_performed"] is False
     assert len(enhancement["management_attention"]) == 4
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "management_attention"
+    ][0][
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["status"] == "success"
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+    ]
+    assert result.run_metadata[
+        "knowledge_retrieval"
+    ]["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+    ]
+    assert len(
+        knowledge_calls
+    ) == 1
+    assert knowledge_calls[0][
+        "allowed_access_scopes"
+    ] == (
+        "Internal",
+    )
+    assert knowledge_calls[0][
+        "max_context_tokens"
+    ] == 600
+    assert knowledge_calls[0][
+        "result_limit"
+    ] == 3
+    assert (
+        "availability"
+        in knowledge_calls[0][
+            "query"
+        ].casefold()
+    )
 
 
 def test_executive_brief_agent_falls_back_after_llm_timeout(
@@ -514,3 +635,249 @@ def test_executive_brief_agent_rejects_change_or_workflow_claims(
     assert result.llm_error_type == "LLMProviderResponseError"
     assert result.output_data["snapshot"]["open_issue_count"] == 12
     assert result.output_data["database"]["record_status"] == "Draft"
+
+def test_executive_brief_agent_rejects_invented_knowledge_citation(
+    monkeypatch: Any,
+) -> None:
+    """Knowledge citations must come only from safe retrieval."""
+
+    configure_brief_service(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = [
+            "DOC-999-V1:CHUNK-99"
+        ]
+
+    result = asyncio.run(
+        ExecutiveBriefAgent(
+            llm_provider=MutatingMockProvider(
+                build_provider_config(),
+                mutate,
+            )
+        ).execute(
+            AgentContext(
+                run_type=(
+                    "executive-brief-invented-knowledge-citation-test"
+                )
+            )
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "unsupported controlled identifiers"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert (
+        "knowledge_citation_ids"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+
+
+def test_executive_brief_agent_continues_when_knowledge_retrieval_fails(
+    monkeypatch: Any,
+) -> None:
+    """Optional RAG failure must not replace the persisted brief."""
+
+    configure_brief_service(
+        monkeypatch
+    )
+
+    def fail_retrieval(
+        **_: Any,
+    ) -> dict[str, Any]:
+        raise RuntimeError(
+            "Simulated knowledge database failure."
+        )
+
+    monkeypatch.setattr(
+        brief_module,
+        "retrieve_agent_knowledge",
+        fail_retrieval,
+    )
+
+    result = asyncio.run(
+        ExecutiveBriefAgent(
+            llm_provider=MockLLMProvider(
+                build_provider_config()
+            )
+        ).execute(
+            AgentContext(
+                run_type=(
+                    "executive-brief-knowledge-unavailable-test"
+                )
+            )
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["status"] == "unavailable"
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["error_type"] == "RuntimeError"
+    assert any(
+        "persisted deterministic Executive Brief remains authoritative"
+        in warning
+        for warning in enhancement[
+            "knowledge_retrieval"
+        ]["warnings"]
+    )
+
+
+def test_executive_brief_agent_uses_knowledge_citation_when_required(
+    monkeypatch: Any,
+) -> None:
+    """Controlled RAG mode should carry a retrieved citation."""
+
+    configure_brief_service(
+        monkeypatch
+    )
+
+    result = asyncio.run(
+        ExecutiveBriefAgent(
+            llm_provider=MockLLMProvider(
+                build_provider_config()
+            )
+        ).execute(
+            AgentContext(
+                run_type=(
+                    "executive-brief-required-knowledge-citation-success"
+                ),
+                input_data={
+                    "require_knowledge_citation": True,
+                },
+            )
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == [
+        "DOC-7-V1:CHUNK-1",
+    ]
+
+    assert enhancement[
+        "management_attention"
+    ][0][
+        "knowledge_citation_ids"
+    ] == [
+        "DOC-7-V1:CHUNK-1",
+    ]
+
+    assert all(
+        item[
+            "knowledge_citation_ids"
+        ] == []
+        for item in enhancement[
+            "management_attention"
+        ][1:]
+    )
+
+
+def test_executive_brief_agent_requires_knowledge_citation_when_requested(
+    monkeypatch: Any,
+) -> None:
+    """Controlled RAG mode must actually cite retrieved knowledge."""
+
+    configure_brief_service(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = []
+
+        for item in output.get(
+            "management_attention",
+            [],
+        ):
+            if isinstance(
+                item,
+                dict,
+            ):
+                item[
+                    "knowledge_citation_ids"
+                ] = []
+
+    result = asyncio.run(
+        ExecutiveBriefAgent(
+            llm_provider=MutatingMockProvider(
+                build_provider_config(),
+                mutate,
+            )
+        ).execute(
+            AgentContext(
+                run_type=(
+                    "executive-brief-required-knowledge-citation-test"
+                ),
+                input_data={
+                    "require_knowledge_citation": True,
+                },
+            )
+        )
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "required at least one retrieved knowledge citation"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+

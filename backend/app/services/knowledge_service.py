@@ -1675,8 +1675,9 @@ def search_knowledge(
         "citations": citations,
         "warnings": [
             (
-                "This Part 1 retrieval uses PostgreSQL full-text "
-                "search. Vector similarity is added in Day 34 Part 2."
+                "PostgreSQL full-text search is the active "
+                "knowledge retrieval method. Semantic/vector retrieval "
+                "remains an optional future enhancement."
             )
         ],
     }

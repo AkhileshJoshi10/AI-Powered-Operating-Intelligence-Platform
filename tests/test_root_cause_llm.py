@@ -11,7 +11,11 @@ from backend.app.agents import (
     AgentContext,
     AgentExecutionStatus,
 )
-from backend.app.agents.root_cause_agent import RootCauseAgent
+from backend.app.agents.root_cause_agent import (
+    RootCauseAgent,
+    build_deterministic_root_cause_output,
+    get_allowed_root_cause_factor_statements,
+)
 from backend.app.llm import (
     LLMProviderConfig,
     LLMRequest,
@@ -272,10 +276,87 @@ def configure_root_cause_pipeline(
         fake_save,
     )
 
+    knowledge_calls: list[
+        dict[str, Any]
+    ] = []
+
+    def fake_retrieve_agent_knowledge(
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        knowledge_calls.append(
+            dict(
+                kwargs
+            )
+        )
+
+        return {
+            "status": "success",
+            "enabled": True,
+            "query": str(
+                kwargs.get(
+                    "query",
+                    "",
+                )
+            ),
+            "retrieval_method": (
+                "PostgreSQL Full-Text Search"
+            ),
+            "retrieved_result_count": 2,
+            "included_result_count": 2,
+            "context_token_estimate": 80,
+            "max_context_tokens": 1200,
+            "citations": [
+                "DOC-7-V1:CHUNK-1",
+                "DOC-9-V2:CHUNK-3",
+            ],
+            "knowledge_context": [
+                {
+                    "citation_id": "DOC-7-V1:CHUNK-1",
+                    "title": "Inventory Reorder Policy",
+                    "document_type": "Policy",
+                    "access_scope": "Internal",
+                    "source_date": None,
+                    "section_title": "Replenishment",
+                    "content": (
+                        "Low-stock replenishment must follow "
+                        "the approved escalation policy."
+                    ),
+                    "relevance_score": 0.9,
+                    "token_estimate": 40,
+                },
+                {
+                    "citation_id": "DOC-9-V2:CHUNK-3",
+                    "title": "Vendor Delivery SLA",
+                    "document_type": "Vendor Contract",
+                    "access_scope": "Internal",
+                    "source_date": None,
+                    "section_title": "Delivery Performance",
+                    "content": (
+                        "Repeated supplier delays require "
+                        "management review."
+                    ),
+                    "relevance_score": 0.8,
+                    "token_estimate": 40,
+                },
+            ],
+            "safety_policy": {
+                "retrieved_text_is_untrusted": True,
+                "knowledge_claims_require_supplied_citation_ids": True,
+            },
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "retrieve_agent_knowledge",
+        fake_retrieve_agent_knowledge,
+    )
+
     return {
         "analyses": analyses,
         "selected_evidence": selected_evidence,
         "persistence_calls": persistence_calls,
+        "knowledge_calls": knowledge_calls,
     }
 
 
@@ -284,7 +365,7 @@ def test_root_cause_agent_remains_deterministic_when_llm_disabled(
 ) -> None:
     """A disabled provider should preserve the deterministic result."""
 
-    configure_root_cause_pipeline(
+    pipeline_data = configure_root_cause_pipeline(
         monkeypatch
     )
 
@@ -316,6 +397,9 @@ def test_root_cause_agent_remains_deterministic_when_llm_disabled(
         "llm_enhancement_persisted_to_root_cause_table": False,
         "accepted_or_edited_records_preserved": True,
     }
+    assert pipeline_data[
+        "knowledge_calls"
+    ] == []
 
 
 def test_root_cause_agent_adds_grounded_llm_explanation(
@@ -323,7 +407,7 @@ def test_root_cause_agent_adds_grounded_llm_explanation(
 ) -> None:
     """The mock provider should enhance without changing RCA facts."""
 
-    configure_root_cause_pipeline(
+    pipeline_data = configure_root_cause_pipeline(
         monkeypatch
     )
 
@@ -373,6 +457,46 @@ def test_root_cause_agent_adds_grounded_llm_explanation(
         "FINDING-002",
     ]
     assert explanations[0]["human_review_required"] is True
+    assert explanations[0]["knowledge_citation_ids"] == []
+    assert enhancement["knowledge_citation_ids"] == []
+
+    knowledge_summary = enhancement[
+        "knowledge_retrieval"
+    ]
+
+    assert knowledge_summary["status"] == "success"
+    assert knowledge_summary["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+    assert result.run_metadata[
+        "knowledge_retrieval"
+    ]["citations"] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+
+    assert len(
+        pipeline_data[
+            "knowledge_calls"
+        ]
+    ) == 1
+
+    retrieval_call = pipeline_data[
+        "knowledge_calls"
+    ][0]
+
+    assert retrieval_call[
+        "allowed_access_scopes"
+    ] == (
+        "Internal",
+    )
+    assert "Inventory" in retrieval_call[
+        "query"
+    ]
+    assert "Procurement" in retrieval_call[
+        "query"
+    ]
 
 
 def test_root_cause_agent_falls_back_after_llm_timeout(
@@ -449,30 +573,30 @@ def test_root_cause_agent_rejects_invented_issue_reference(
     assert result.output_data["analysis"]["generated_count"] == 2
 
 
-def test_root_cause_agent_rejects_changed_category_and_factor(
+def test_root_cause_agent_rejects_changed_category(
     monkeypatch: Any,
 ) -> None:
-    """Changed RCA facts must not replace deterministic output."""
+    """Changed deterministic RCA category must trigger fallback."""
 
     configure_root_cause_pipeline(
         monkeypatch
     )
 
-    def mutate(output: dict[str, Any]) -> None:
-        first = output["root_cause_explanations"][0]
-        first["deterministic_root_cause_category"] = (
-            "Invented Commercial Cause"
-        )
-        first["likely_contributing_factors"] = [
-            "An unsupported competitor action caused the issue."
-        ]
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "root_cause_explanations"
+        ][0][
+            "deterministic_root_cause_category"
+        ] = "Invented Commercial Cause"
 
     provider = MutatingMockProvider(
         build_provider_config(),
         mutate,
     )
     context = AgentContext(
-        run_type="root-cause-changed-facts-test",
+        run_type="root-cause-changed-category-test",
         input_data={
             "analysis_limit": 2,
         },
@@ -484,12 +608,395 @@ def test_root_cause_agent_rejects_changed_category_and_factor(
         ).execute(context)
     )
 
-    assert result.execution_status == AgentExecutionStatus.SUCCESS
-    assert result.used_fallback is True
-    assert result.llm_error_type == "LLMProviderResponseError"
-    assert "changed the deterministic root-cause category" in (
-        result.llm_error_message or ""
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
     )
-    assert result.output_data["analyses"][0][
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "changed the deterministic root-cause category"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert result.output_data[
+        "analyses"
+    ][0][
         "root_cause_category"
-    ] == "Inventory Replenishment and Supply Risk"
+    ] == (
+        "Inventory Replenishment and Supply Risk"
+    )
+
+
+def test_root_cause_agent_rejects_unsupported_factor(
+    monkeypatch: Any,
+) -> None:
+    """Invented contributing factors must fail the controlled allowlist."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "root_cause_explanations"
+        ][0][
+            "likely_contributing_factors"
+        ] = [
+            (
+                "An unsupported competitor action "
+                "caused the issue."
+            )
+        ]
+
+    provider = MutatingMockProvider(
+        build_provider_config(),
+        mutate,
+    )
+    context = AgentContext(
+        run_type="root-cause-unsupported-factor-test",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent(
+            llm_provider=provider
+        ).execute(context)
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "unsupported controlled identifiers"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert (
+        "likely_contributing_factors"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert result.output_data[
+        "analyses"
+    ][0][
+        "root_cause_category"
+    ] == (
+        "Inventory Replenishment and Supply Risk"
+    )
+
+def test_root_cause_agent_rejects_invented_knowledge_citation(
+    monkeypatch: Any,
+) -> None:
+    """Knowledge citations must come only from safe retrieval."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = [
+            "DOC-999-V1:CHUNK-99"
+        ]
+
+    provider = MutatingMockProvider(
+        build_provider_config(),
+        mutate,
+    )
+    context = AgentContext(
+        run_type=(
+            "root-cause-invented-knowledge-citation-test"
+        ),
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent(
+            llm_provider=provider
+        ).execute(context)
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "unsupported controlled identifiers"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+    assert (
+        "knowledge_citation_ids"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+
+
+def test_root_cause_agent_continues_when_knowledge_retrieval_fails(
+    monkeypatch: Any,
+) -> None:
+    """Optional RAG failure must not replace deterministic RCA."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    def fail_retrieval(
+        **_: Any,
+    ) -> dict[str, Any]:
+        raise RuntimeError(
+            "Simulated knowledge database failure."
+        )
+
+    monkeypatch.setattr(
+        root_cause_module,
+        "retrieve_agent_knowledge",
+        fail_retrieval,
+    )
+
+    provider = MockLLMProvider(
+        build_provider_config()
+    )
+    context = AgentContext(
+        run_type=(
+            "root-cause-knowledge-unavailable-test"
+        ),
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent(
+            llm_provider=provider
+        ).execute(context)
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement["status"] == "Complete"
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == []
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["status"] == "unavailable"
+    assert enhancement[
+        "knowledge_retrieval"
+    ]["error_type"] == "RuntimeError"
+
+    assert any(
+        "deterministic root-cause analysis remains authoritative"
+        in warning
+        for warning in enhancement[
+            "knowledge_retrieval"
+        ]["warnings"]
+    )
+
+def test_root_cause_agent_uses_knowledge_citation_when_required(
+    monkeypatch: Any,
+) -> None:
+    """Controlled live-RAG mode should carry retrieved citations."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    provider = MockLLMProvider(
+        build_provider_config()
+    )
+    context = AgentContext(
+        run_type=(
+            "root-cause-required-knowledge-citation-success-test"
+        ),
+        input_data={
+            "analysis_limit": 2,
+            "require_knowledge_citation": True,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent(
+            llm_provider=provider
+        ).execute(context)
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is False
+
+    enhancement = result.output_data[
+        "llm_enhancement"
+    ]
+
+    assert enhancement[
+        "knowledge_citation_ids"
+    ] == [
+        "DOC-7-V1:CHUNK-1",
+        "DOC-9-V2:CHUNK-3",
+    ]
+
+    for explanation in enhancement[
+        "root_cause_explanations"
+    ]:
+        assert explanation[
+            "knowledge_citation_ids"
+        ] == [
+            "DOC-7-V1:CHUNK-1",
+            "DOC-9-V2:CHUNK-3",
+        ]
+
+
+def test_root_cause_agent_requires_knowledge_citation_when_requested(
+    monkeypatch: Any,
+) -> None:
+    """Controlled live-RAG mode must actually cite retrieved knowledge."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    def mutate(
+        output: dict[str, Any],
+    ) -> None:
+        output[
+            "knowledge_citation_ids"
+        ] = []
+
+        for explanation in output.get(
+            "root_cause_explanations",
+            [],
+        ):
+            if isinstance(
+                explanation,
+                dict,
+            ):
+                explanation[
+                    "knowledge_citation_ids"
+                ] = []
+
+    provider = MutatingMockProvider(
+        build_provider_config(),
+        mutate,
+    )
+    context = AgentContext(
+        run_type=(
+            "root-cause-required-knowledge-citation-test"
+        ),
+        input_data={
+            "analysis_limit": 2,
+            "require_knowledge_citation": True,
+        },
+    )
+
+    result = asyncio.run(
+        RootCauseAgent(
+            llm_provider=provider
+        ).execute(context)
+    )
+
+    assert (
+        result.execution_status
+        == AgentExecutionStatus.SUCCESS
+    )
+    assert result.used_fallback is True
+    assert (
+        result.llm_error_type
+        == "LLMProviderResponseError"
+    )
+    assert (
+        "required at least one retrieved knowledge citation"
+        in (
+            result.llm_error_message
+            or ""
+        )
+    )
+
+def test_root_cause_factor_allowlist_uses_exact_deterministic_statements(
+    monkeypatch: Any,
+) -> None:
+    """Strict schema factors must come from deterministic RCA text."""
+
+    configure_root_cause_pipeline(
+        monkeypatch
+    )
+
+    context = AgentContext(
+        run_type="root-cause-factor-allowlist-test",
+        input_data={
+            "analysis_limit": 2,
+        },
+    )
+
+    deterministic_output = (
+        build_deterministic_root_cause_output(
+            context
+        )
+    )
+
+    allowed_factors = (
+        get_allowed_root_cause_factor_statements(
+            deterministic_output
+        )
+    )
+
+    assert allowed_factors == [
+        "Current stock is below reorder level.",
+        "Supplier delivery performance is delayed.",
+        "Multiple deliveries were delayed.",
+        "Partial deliveries were recorded.",
+    ]
+
+    assert (
+        "Supplier on-time delivery rate is only 50.00%."
+        not in allowed_factors
+    )
+    assert (
+        "The product is linked to 67 complaints, including "
+        "35 High-severity cases."
+        not in allowed_factors
+    )

@@ -64,8 +64,36 @@ def parse_arguments(
             "Default: all."
         ),
     )
+    parser.add_argument(
+        "--require-rag",
+        action="store_true",
+        help=(
+            "Require supported Day 34 agents to retrieve real "
+            "PostgreSQL knowledge and return at least one allowed "
+            "DOC-* knowledge citation. Supported single-agent modes: "
+            "root-cause and recommendation."
+        ),
+    )
 
-    return parser.parse_args()
+    arguments = parser.parse_args()
+
+    if (
+        arguments.require_rag
+        and arguments.agent
+        not in {
+            "root-cause",
+            "recommendation",
+            "executive-brief",
+            "all",
+        }
+    ):
+        parser.error(
+            "--require-rag can be used only with "
+            "--agent root-cause, --agent recommendation, "
+            "--agent executive-brief, or --agent all."
+        )
+
+    return arguments
 
 
 def resolve_agent_sequence(
@@ -156,6 +184,790 @@ def money_value(
     return float(value)
 
 
+def normalized_string_list(
+    value: object,
+) -> list[str]:
+    """Return normalized unique strings from one list value."""
+
+    if not isinstance(
+        value,
+        list,
+    ):
+        return []
+
+    values: list[str] = []
+
+    for item in value:
+        normalized = " ".join(
+            str(
+                item
+            ).split()
+        )
+
+        if (
+            normalized
+            and normalized not in values
+        ):
+            values.append(
+                normalized
+            )
+
+    return values
+
+
+def collect_nested_reference_ids(
+    items: object,
+    field_name: str,
+) -> list[str]:
+    """Collect one controlled reference field from nested dictionaries."""
+
+    if not isinstance(
+        items,
+        list,
+    ):
+        return []
+
+    values: list[str] = []
+
+    for item in items:
+        if not isinstance(
+            item,
+            dict,
+        ):
+            continue
+
+        for value in normalized_string_list(
+            item.get(
+                field_name
+            )
+        ):
+            if value not in values:
+                values.append(
+                    value
+                )
+
+    return values
+
+
+def validate_root_cause_rag_output(
+    *,
+    enhancement: dict[str, Any],
+    run_metadata: dict[str, Any] | None = None,
+) -> list[str]:
+    """Validate live Root-Cause RAG retrieval and citation separation."""
+
+    failures: list[str] = []
+
+    knowledge_retrieval = enhancement.get(
+        "knowledge_retrieval",
+        {},
+    )
+
+    if (
+        not isinstance(
+            knowledge_retrieval,
+            dict,
+        )
+        or not knowledge_retrieval
+    ):
+        metadata = (
+            run_metadata
+            if isinstance(
+                run_metadata,
+                dict,
+            )
+            else {}
+        )
+        knowledge_retrieval = metadata.get(
+            "knowledge_retrieval",
+            {},
+        )
+
+    if not isinstance(
+        knowledge_retrieval,
+        dict,
+    ):
+        return [
+            "Root-Cause Agent did not return knowledge retrieval metadata."
+        ]
+
+    retrieval_status = str(
+        knowledge_retrieval.get(
+            "status",
+            "",
+        )
+    )
+
+    try:
+        included_count = int(
+            knowledge_retrieval.get(
+                "included_result_count",
+                0,
+            )
+            or 0
+        )
+    except (TypeError, ValueError):
+        included_count = 0
+
+    retrieved_citations = (
+        normalized_string_list(
+            knowledge_retrieval.get(
+                "citations"
+            )
+        )
+    )
+
+    top_level_knowledge_citations = (
+        normalized_string_list(
+            enhancement.get(
+                "knowledge_citation_ids"
+            )
+        )
+    )
+
+    explanations = enhancement.get(
+        "root_cause_explanations",
+        [],
+    )
+
+    nested_knowledge_citations = (
+        collect_nested_reference_ids(
+            explanations,
+            "knowledge_citation_ids",
+        )
+    )
+
+    business_evidence_ids = (
+        normalized_string_list(
+            enhancement.get(
+                "evidence_ids"
+            )
+        )
+    )
+    business_evidence_ids.extend(
+        reference_id
+        for reference_id in (
+            collect_nested_reference_ids(
+                explanations,
+                "evidence_ids",
+            )
+        )
+        if reference_id not in business_evidence_ids
+    )
+
+    returned_knowledge_citations = list(
+        top_level_knowledge_citations
+    )
+
+    for citation_id in nested_knowledge_citations:
+        if (
+            citation_id
+            not in returned_knowledge_citations
+        ):
+            returned_knowledge_citations.append(
+                citation_id
+            )
+
+    if retrieval_status != "success":
+        failures.append(
+            "Root-Cause RAG retrieval status was not success."
+        )
+
+    if included_count < 1:
+        failures.append(
+            "Root-Cause RAG did not include any PostgreSQL "
+            "knowledge chunks."
+        )
+
+    if not retrieved_citations:
+        failures.append(
+            "Root-Cause RAG did not expose any retrieved DOC-* citations."
+        )
+
+    invalid_retrieved = [
+        citation_id
+        for citation_id in retrieved_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_retrieved:
+        failures.append(
+            "Root-Cause retrieval returned non-DOC knowledge "
+            "citations: "
+            + ", ".join(
+                invalid_retrieved
+            )
+        )
+
+    if not returned_knowledge_citations:
+        failures.append(
+            "Root-Cause Groq enhancement did not cite any "
+            "retrieved knowledge."
+        )
+
+    unsupported_knowledge_citations = sorted(
+        set(
+            returned_knowledge_citations
+        ).difference(
+            retrieved_citations
+        )
+    )
+
+    if unsupported_knowledge_citations:
+        failures.append(
+            "Root-Cause Groq enhancement returned knowledge "
+            "citations that were not retrieved: "
+            + ", ".join(
+                unsupported_knowledge_citations
+            )
+        )
+
+    invalid_returned_knowledge = [
+        citation_id
+        for citation_id in returned_knowledge_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_returned_knowledge:
+        failures.append(
+            "Root-Cause knowledge_citation_ids contains "
+            "non-DOC identifiers: "
+            + ", ".join(
+                invalid_returned_knowledge
+            )
+        )
+
+    doc_ids_in_business_evidence = [
+        evidence_id
+        for evidence_id in business_evidence_ids
+        if evidence_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if doc_ids_in_business_evidence:
+        failures.append(
+            "Root-Cause evidence_ids incorrectly contains "
+            "knowledge DOC-* citations: "
+            + ", ".join(
+                doc_ids_in_business_evidence
+            )
+        )
+
+    missing_top_level_knowledge = sorted(
+        set(
+            nested_knowledge_citations
+        ).difference(
+            top_level_knowledge_citations
+        )
+    )
+
+    if missing_top_level_knowledge:
+        failures.append(
+            "Nested Root-Cause knowledge citations were missing "
+            "from top-level knowledge_citation_ids: "
+            + ", ".join(
+                missing_top_level_knowledge
+            )
+        )
+
+    return failures
+
+
+def validate_recommendation_rag_output(
+    *,
+    enhancement: dict[str, Any],
+    run_metadata: dict[str, Any] | None = None,
+) -> list[str]:
+    """Validate live Recommendation RAG retrieval and citations."""
+
+    failures: list[str] = []
+
+    knowledge_retrieval = enhancement.get(
+        "knowledge_retrieval",
+        {},
+    )
+
+    if (
+        not isinstance(
+            knowledge_retrieval,
+            dict,
+        )
+        or not knowledge_retrieval
+    ):
+        metadata = (
+            run_metadata
+            if isinstance(
+                run_metadata,
+                dict,
+            )
+            else {}
+        )
+        knowledge_retrieval = metadata.get(
+            "knowledge_retrieval",
+            {},
+        )
+
+    if not isinstance(
+        knowledge_retrieval,
+        dict,
+    ):
+        return [
+            (
+                "Recommendation Agent did not return "
+                "knowledge retrieval metadata."
+            )
+        ]
+
+    retrieval_status = str(
+        knowledge_retrieval.get(
+            "status",
+            "",
+        )
+    )
+
+    try:
+        included_count = int(
+            knowledge_retrieval.get(
+                "included_result_count",
+                0,
+            )
+            or 0
+        )
+    except (TypeError, ValueError):
+        included_count = 0
+
+    retrieved_citations = (
+        normalized_string_list(
+            knowledge_retrieval.get(
+                "citations"
+            )
+        )
+    )
+
+    top_level_knowledge_citations = (
+        normalized_string_list(
+            enhancement.get(
+                "knowledge_citation_ids"
+            )
+        )
+    )
+
+    recommendation_items = enhancement.get(
+        "recommendation_enhancements",
+        [],
+    )
+
+    nested_knowledge_citations = (
+        collect_nested_reference_ids(
+            recommendation_items,
+            "knowledge_citation_ids",
+        )
+    )
+
+    returned_knowledge_citations = list(
+        top_level_knowledge_citations
+    )
+
+    for citation_id in nested_knowledge_citations:
+        if (
+            citation_id
+            not in returned_knowledge_citations
+        ):
+            returned_knowledge_citations.append(
+                citation_id
+            )
+
+    if retrieval_status != "success":
+        failures.append(
+            "Recommendation RAG retrieval status was not success."
+        )
+
+    if included_count < 1:
+        failures.append(
+            "Recommendation RAG did not include any PostgreSQL "
+            "knowledge chunks."
+        )
+
+    if not retrieved_citations:
+        failures.append(
+            "Recommendation RAG did not expose any retrieved "
+            "DOC-* citations."
+        )
+
+    invalid_retrieved = [
+        citation_id
+        for citation_id in retrieved_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_retrieved:
+        failures.append(
+            "Recommendation retrieval returned non-DOC knowledge "
+            "citations: "
+            + ", ".join(
+                invalid_retrieved
+            )
+        )
+
+    if not returned_knowledge_citations:
+        failures.append(
+            "Recommendation Groq enhancement did not cite any "
+            "retrieved knowledge."
+        )
+
+    unsupported_knowledge_citations = sorted(
+        set(
+            returned_knowledge_citations
+        ).difference(
+            retrieved_citations
+        )
+    )
+
+    if unsupported_knowledge_citations:
+        failures.append(
+            "Recommendation Groq enhancement returned knowledge "
+            "citations that were not retrieved: "
+            + ", ".join(
+                unsupported_knowledge_citations
+            )
+        )
+
+    invalid_returned_knowledge = [
+        citation_id
+        for citation_id in returned_knowledge_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_returned_knowledge:
+        failures.append(
+            "Recommendation knowledge_citation_ids contains "
+            "non-DOC identifiers: "
+            + ", ".join(
+                invalid_returned_knowledge
+            )
+        )
+
+    missing_top_level_knowledge = sorted(
+        set(
+            nested_knowledge_citations
+        ).difference(
+            top_level_knowledge_citations
+        )
+    )
+
+    if missing_top_level_knowledge:
+        failures.append(
+            "Nested Recommendation knowledge citations were missing "
+            "from top-level knowledge_citation_ids: "
+            + ", ".join(
+                missing_top_level_knowledge
+            )
+        )
+
+    if enhancement.get(
+        "human_review_required"
+    ) is not True:
+        failures.append(
+            "Recommendation RAG removed the human-review requirement."
+        )
+
+    if enhancement.get(
+        "recommendations_approved"
+    ) is not False:
+        failures.append(
+            "Recommendation RAG incorrectly approved recommendations."
+        )
+
+    if enhancement.get(
+        "tasks_created"
+    ) is not False:
+        failures.append(
+            "Recommendation RAG incorrectly created tasks."
+        )
+
+    return failures
+
+
+def validate_executive_brief_rag_output(
+    *,
+    enhancement: dict[str, Any],
+    run_metadata: dict[str, Any] | None = None,
+) -> list[str]:
+    """Validate live Executive Brief RAG retrieval and controls."""
+
+    failures: list[str] = []
+    enhancement_complete = (
+        enhancement.get(
+            "status"
+        )
+        == "Complete"
+    )
+
+    knowledge_retrieval = enhancement.get(
+        "knowledge_retrieval",
+        {},
+    )
+
+    if (
+        not isinstance(
+            knowledge_retrieval,
+            dict,
+        )
+        or not knowledge_retrieval
+    ):
+        metadata = (
+            run_metadata
+            if isinstance(
+                run_metadata,
+                dict,
+            )
+            else {}
+        )
+        knowledge_retrieval = metadata.get(
+            "knowledge_retrieval",
+            {},
+        )
+
+    if not isinstance(
+        knowledge_retrieval,
+        dict,
+    ):
+        return [
+            (
+                "Executive Brief Agent did not return "
+                "knowledge retrieval metadata."
+            )
+        ]
+
+    retrieval_status = str(
+        knowledge_retrieval.get(
+            "status",
+            "",
+        )
+    )
+
+    try:
+        included_count = int(
+            knowledge_retrieval.get(
+                "included_result_count",
+                0,
+            )
+            or 0
+        )
+    except (TypeError, ValueError):
+        included_count = 0
+
+    retrieved_citations = (
+        normalized_string_list(
+            knowledge_retrieval.get(
+                "citations"
+            )
+        )
+    )
+
+    top_level_knowledge_citations = (
+        normalized_string_list(
+            enhancement.get(
+                "knowledge_citation_ids"
+            )
+        )
+    )
+
+    attention_items = enhancement.get(
+        "management_attention",
+        [],
+    )
+
+    nested_knowledge_citations = (
+        collect_nested_reference_ids(
+            attention_items,
+            "knowledge_citation_ids",
+        )
+    )
+
+    returned_knowledge_citations = list(
+        top_level_knowledge_citations
+    )
+
+    for citation_id in nested_knowledge_citations:
+        if (
+            citation_id
+            not in returned_knowledge_citations
+        ):
+            returned_knowledge_citations.append(
+                citation_id
+            )
+
+    evidence_ids = normalized_string_list(
+        enhancement.get(
+            "evidence_ids"
+        )
+    )
+
+    evidence_ids.extend(
+        reference_id
+        for reference_id in (
+            collect_nested_reference_ids(
+                attention_items,
+                "evidence_ids",
+            )
+        )
+        if reference_id not in evidence_ids
+    )
+
+    if retrieval_status != "success":
+        failures.append(
+            "Executive Brief RAG retrieval status was not success."
+        )
+
+    if included_count < 1:
+        failures.append(
+            "Executive Brief RAG did not include any PostgreSQL "
+            "knowledge chunks."
+        )
+
+    if not retrieved_citations:
+        failures.append(
+            "Executive Brief RAG did not expose any retrieved "
+            "DOC-* citations."
+        )
+
+    invalid_retrieved = [
+        citation_id
+        for citation_id in retrieved_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_retrieved:
+        failures.append(
+            "Executive Brief retrieval returned non-DOC knowledge "
+            "citations: "
+            + ", ".join(
+                invalid_retrieved
+            )
+        )
+
+    # A provider/request failure has no completed LLM output to inspect.
+    # The caller separately records fallback and provider errors.
+    if not enhancement_complete:
+        return failures
+
+    if not returned_knowledge_citations:
+        failures.append(
+            "Executive Brief Groq enhancement did not cite any "
+            "retrieved knowledge."
+        )
+
+    unsupported_knowledge_citations = sorted(
+        set(
+            returned_knowledge_citations
+        ).difference(
+            retrieved_citations
+        )
+    )
+
+    if unsupported_knowledge_citations:
+        failures.append(
+            "Executive Brief Groq enhancement returned knowledge "
+            "citations that were not retrieved: "
+            + ", ".join(
+                unsupported_knowledge_citations
+            )
+        )
+
+    invalid_returned_knowledge = [
+        citation_id
+        for citation_id in returned_knowledge_citations
+        if not citation_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if invalid_returned_knowledge:
+        failures.append(
+            "Executive Brief knowledge_citation_ids contains "
+            "non-DOC identifiers: "
+            + ", ".join(
+                invalid_returned_knowledge
+            )
+        )
+
+    doc_ids_in_business_evidence = [
+        evidence_id
+        for evidence_id in evidence_ids
+        if evidence_id.startswith(
+            "DOC-"
+        )
+    ]
+
+    if doc_ids_in_business_evidence:
+        failures.append(
+            "Executive Brief evidence_ids incorrectly contains "
+            "knowledge DOC-* citations: "
+            + ", ".join(
+                doc_ids_in_business_evidence
+            )
+        )
+
+    missing_top_level_knowledge = sorted(
+        set(
+            nested_knowledge_citations
+        ).difference(
+            top_level_knowledge_citations
+        )
+    )
+
+    if missing_top_level_knowledge:
+        failures.append(
+            "Nested Executive Brief knowledge citations were "
+            "missing from top-level knowledge_citation_ids: "
+            + ", ".join(
+                missing_top_level_knowledge
+            )
+        )
+
+    if enhancement.get(
+        "human_review_required"
+    ) is not True:
+        failures.append(
+            "Executive Brief RAG removed the human-review requirement."
+        )
+
+    if enhancement.get(
+        "database_update_performed"
+    ) is not False:
+        failures.append(
+            "Executive Brief RAG incorrectly performed a database update."
+        )
+
+    if enhancement.get(
+        "workflow_action_performed"
+    ) is not False:
+        failures.append(
+            "Executive Brief RAG incorrectly performed a workflow action."
+        )
+
+    if enhancement.get(
+        "comparison_available"
+    ) is not False:
+        failures.append(
+            "Executive Brief RAG incorrectly claimed comparison data."
+        )
+
+    return failures
+
+
 async def main() -> None:
     """Run one or all real agents with Groq against only the test DB."""
 
@@ -197,7 +1009,14 @@ async def main() -> None:
         max_retries=2,
         retry_backoff_seconds=1.0,
         max_input_tokens=16000,
-        max_output_tokens=2000,
+        max_output_tokens=(
+            1400
+            if (
+                arguments.require_rag
+                and arguments.agent == "executive-brief"
+            )
+            else 2000
+        ),
         max_estimated_cost_usd=0.02,
         temperature=0.0,
         mask_sensitive_data=True,
@@ -234,21 +1053,44 @@ async def main() -> None:
 
     context = AgentContext(
         run_type=(
-            "day36-live-groq-five-agent-test"
-            if arguments.agent == "all"
+            (
+                "day34-live-root-cause-rag-test"
+                if arguments.agent == "root-cause"
+                else (
+                    "day34-live-recommendation-rag-test"
+                    if arguments.agent == "recommendation"
+                    else (
+                        "day34-live-executive-brief-rag-test"
+                        if arguments.agent == "executive-brief"
+                        else "day34-live-multi-agent-rag-test"
+                    )
+                )
+            )
+            if arguments.require_rag
             else (
-                "day36-live-groq-"
-                + arguments.agent
-                + "-test"
+                "day36-live-groq-five-agent-test"
+                if arguments.agent == "all"
+                else (
+                    "day36-live-groq-"
+                    + arguments.agent
+                    + "-test"
+                )
             )
         ),
-        requested_by="manual-day36",
+        requested_by=(
+            "manual-day34-rag"
+            if arguments.require_rag
+            else "manual-day36"
+        ),
         input_data={
             "finding_limit": 3,
             "manager_limit": 2,
             "executive_limit": 2,
             "analysis_limit": 2,
             "recommendation_limit": 2,
+            "require_knowledge_citation": (
+                arguments.require_rag
+            ),
         },
     )
 
@@ -359,6 +1201,115 @@ async def main() -> None:
                 "  Error:",
                 result.error_message,
             )
+
+        if (
+            arguments.require_rag
+            and result.agent_name
+            in {
+                "Root-Cause Agent",
+                "Recommendation Agent",
+                "Executive Brief Agent",
+            }
+            and isinstance(
+                enhancement,
+                dict,
+            )
+        ):
+            knowledge_retrieval = enhancement.get(
+                "knowledge_retrieval",
+                {},
+            )
+
+            if (
+                not isinstance(
+                    knowledge_retrieval,
+                    dict,
+                )
+                or not knowledge_retrieval
+            ):
+                run_metadata = (
+                    result.run_metadata
+                    if isinstance(
+                        result.run_metadata,
+                        dict,
+                    )
+                    else {}
+                )
+                knowledge_retrieval = run_metadata.get(
+                    "knowledge_retrieval",
+                    {},
+                )
+
+            if isinstance(
+                knowledge_retrieval,
+                dict,
+            ):
+                print(
+                    "  RAG retrieval:",
+                    knowledge_retrieval.get(
+                        "status"
+                    ),
+                )
+                print(
+                    "  RAG included chunks:",
+                    knowledge_retrieval.get(
+                        "included_result_count"
+                    ),
+                )
+                print(
+                    "  Retrieved knowledge citations:",
+                    knowledge_retrieval.get(
+                        "citations"
+                    ),
+                )
+                print(
+                    "  Returned knowledge citations:",
+                    enhancement.get(
+                        "knowledge_citation_ids"
+                    ),
+                )
+
+            rag_run_metadata = (
+                result.run_metadata
+                if isinstance(
+                    result.run_metadata,
+                    dict,
+                )
+                else {}
+            )
+
+            if (
+                result.agent_name
+                == "Root-Cause Agent"
+            ):
+                failures.extend(
+                    validate_root_cause_rag_output(
+                        enhancement=enhancement,
+                        run_metadata=rag_run_metadata,
+                    )
+                )
+
+            if (
+                result.agent_name
+                == "Recommendation Agent"
+            ):
+                failures.extend(
+                    validate_recommendation_rag_output(
+                        enhancement=enhancement,
+                        run_metadata=rag_run_metadata,
+                    )
+                )
+
+            if (
+                result.agent_name
+                == "Executive Brief Agent"
+            ):
+                failures.extend(
+                    validate_executive_brief_rag_output(
+                        enhancement=enhancement,
+                        run_metadata=rag_run_metadata,
+                    )
+                )
 
         if (
             result.execution_status
@@ -512,8 +1463,31 @@ async def main() -> None:
 
     if failures:
         print()
+
+        if arguments.require_rag:
+            if arguments.agent == "root-cause":
+                failure_heading = (
+                    "DAY 34 ROOT-CAUSE LIVE RAG VALIDATION FAILED"
+                )
+            elif arguments.agent == "recommendation":
+                failure_heading = (
+                    "DAY 34 RECOMMENDATION LIVE RAG VALIDATION FAILED"
+                )
+            elif arguments.agent == "executive-brief":
+                failure_heading = (
+                    "DAY 34 EXECUTIVE BRIEF LIVE RAG VALIDATION FAILED"
+                )
+            else:
+                failure_heading = (
+                    "DAY 34 MULTI-AGENT LIVE RAG VALIDATION FAILED"
+                )
+        else:
+            failure_heading = (
+                "DAY 36 LIVE VALIDATION FAILED"
+            )
+
         print(
-            "DAY 36 LIVE VALIDATION FAILED"
+            failure_heading
         )
 
         for failure in failures:
@@ -522,12 +1496,51 @@ async def main() -> None:
                 failure,
             )
 
+        if arguments.require_rag:
+            if arguments.agent == "root-cause":
+                failure_message = (
+                    "Day 34 Root-Cause live RAG validation failed."
+                )
+            elif arguments.agent == "recommendation":
+                failure_message = (
+                    "Day 34 Recommendation live RAG validation failed."
+                )
+            elif arguments.agent == "executive-brief":
+                failure_message = (
+                    "Day 34 Executive Brief live RAG validation failed."
+                )
+            else:
+                failure_message = (
+                    "Day 34 multi-agent live RAG validation failed."
+                )
+        else:
+            failure_message = (
+                "Day 36 live Groq five-agent validation failed."
+            )
+
         raise RuntimeError(
-            "Day 36 live Groq five-agent validation failed."
+            failure_message
         )
 
     print()
-    if arguments.agent == "all":
+    if arguments.require_rag:
+        if arguments.agent == "root-cause":
+            print(
+                "DAY 34 ROOT-CAUSE LIVE RAG VALIDATION PASSED"
+            )
+        elif arguments.agent == "recommendation":
+            print(
+                "DAY 34 RECOMMENDATION LIVE RAG VALIDATION PASSED"
+            )
+        elif arguments.agent == "executive-brief":
+            print(
+                "DAY 34 EXECUTIVE BRIEF LIVE RAG VALIDATION PASSED"
+            )
+        else:
+            print(
+                "DAY 34 MULTI-AGENT LIVE RAG VALIDATION PASSED"
+            )
+    elif arguments.agent == "all":
         print(
             "DAY 36 LIVE FIVE-AGENT VALIDATION PASSED"
         )

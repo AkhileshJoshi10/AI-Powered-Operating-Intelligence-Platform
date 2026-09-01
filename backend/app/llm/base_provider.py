@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from abc import ABC, abstractmethod
 from math import ceil
@@ -39,6 +40,7 @@ PHONE_PATTERN = re.compile(
     r"(?:\+?\d[\d\s()-]{7,}\d)"
     r"(?![A-Za-z0-9_-])"
 )
+
 
 
 def mask_sensitive_text(
@@ -118,6 +120,40 @@ def estimate_tokens(
     )
 
 
+def estimate_request_input_tokens(
+    request: LLMRequest,
+) -> int:
+    """
+    Estimate complete provider input, including tool contracts and
+    prior tool-call history.
+    """
+
+    serialized_request = json.dumps(
+        {
+            "messages": [
+                message.model_dump(
+                    mode="json"
+                )
+                for message in request.messages
+            ],
+            "tools": [
+                tool.model_dump(
+                    mode="json"
+                )
+                for tool in request.tools
+            ],
+            "tool_choice": request.tool_choice,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+    return estimate_tokens(
+        serialized_request
+    )
+
+
 class BaseLLMProvider(ABC):
     """Provider-independent LLM interface with shared guardrails."""
 
@@ -152,12 +188,10 @@ class BaseLLMProvider(ABC):
                 + ", ".join(unauthorized_tools)
             )
 
-        message_text = "\n".join(
-            message.content
-            for message in request.messages
-        )
-        estimated_input_tokens = estimate_tokens(
-            message_text
+        estimated_input_tokens = (
+            estimate_request_input_tokens(
+                request
+            )
         )
 
         if (
@@ -187,15 +221,27 @@ class BaseLLMProvider(ABC):
             return request
 
         masked_messages = [
-            LLMMessage(
-                role=message.role,
-                content=mask_sensitive_text(
-                    message.content
-                ),
-                name=message.name,
-                metadata=mask_sensitive_value(
-                    message.metadata
-                ),
+            message.model_copy(
+                update={
+                    "content": mask_sensitive_text(
+                        message.content
+                    ),
+                    "metadata": mask_sensitive_value(
+                        message.metadata
+                    ),
+                    "tool_calls": [
+                        tool_call.model_copy(
+                            update={
+                                "arguments": (
+                                    mask_sensitive_value(
+                                        tool_call.arguments
+                                    )
+                                ),
+                            }
+                        )
+                        for tool_call in message.tool_calls
+                    ],
+                }
             )
             for message in request.messages
         ]
@@ -260,6 +306,56 @@ class BaseLLMProvider(ABC):
                         "does not match the request."
                     )
 
+                requested_tool_names = {
+                    tool.name
+                    for tool in prepared_request.tools
+                }
+
+                if response.tool_calls:
+                    if (
+                        response.finish_reason
+                        != "tool_call"
+                    ):
+                        raise LLMProviderResponseError(
+                            "Provider returned tool_calls without "
+                            "a tool-call finish reason."
+                        )
+
+                    if not requested_tool_names:
+                        raise LLMProviderResponseError(
+                            "Provider returned a tool call when no "
+                            "tool definitions were supplied."
+                        )
+
+                    invalid_response_tools = [
+                        tool_call.tool_name
+                        for tool_call in response.tool_calls
+                        if (
+                            tool_call.tool_name
+                            not in requested_tool_names
+                            or tool_call.tool_name
+                            not in prepared_request.allowed_tools
+                        )
+                    ]
+
+                    if invalid_response_tools:
+                        raise LLMProviderResponseError(
+                            "Provider returned an unrequested "
+                            "tool call: "
+                            + ", ".join(
+                                invalid_response_tools
+                            )
+                        )
+
+                elif (
+                    response.finish_reason
+                    == "tool_call"
+                ):
+                    raise LLMProviderResponseError(
+                        "Provider returned a tool-call finish reason "
+                        "without tool_calls."
+                    )
+
                 if (
                     response.usage.output_tokens
                     > self.config.max_output_tokens
@@ -280,6 +376,7 @@ class BaseLLMProvider(ABC):
 
                 if (
                     prepared_request.require_json_object
+                    and response.finish_reason != "tool_call"
                     and response.structured_output is None
                 ):
                     raise LLMProviderResponseError(

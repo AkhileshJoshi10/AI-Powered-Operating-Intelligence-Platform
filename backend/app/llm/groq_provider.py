@@ -11,7 +11,7 @@ from groq import AsyncGroq
 
 from backend.app.llm.base_provider import (
     BaseLLMProvider,
-    estimate_tokens,
+    estimate_request_input_tokens,
 )
 from backend.app.llm.llm_exceptions import (
     LLMAuthenticationError,
@@ -27,6 +27,7 @@ from backend.app.llm.llm_models import (
     LLMRequest,
     LLMResponse,
     LLMTokenUsage,
+    LLMToolCall,
 )
 
 
@@ -299,27 +300,83 @@ def estimate_groq_cost_usd(
     )
 
 
+def convert_tool_call_for_groq(
+    tool_call: LLMToolCall,
+) -> dict[str, Any]:
+    """Convert one shared tool call into Groq assistant history."""
+
+    return {
+        "id": tool_call.tool_call_id,
+        "type": "function",
+        "function": {
+            "name": tool_call.tool_name,
+            "arguments": json.dumps(
+                tool_call.arguments,
+                ensure_ascii=False,
+                separators=(
+                    ",",
+                    ":",
+                ),
+            ),
+        },
+    }
+
+
 def convert_messages_for_groq(
     request: LLMRequest,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Convert provider-independent messages to Groq messages."""
 
     converted_messages: list[
-        dict[str, str]
+        dict[str, Any]
     ] = []
 
     for message in request.messages:
-        if message.role == "tool":
-            raise LLMRequestValidationError(
-                "Groq tool-result messages are not enabled while "
-                "controlled tool execution is disabled. Tool use will "
-                "be added in the controlled-tool stage."
+        converted_message: dict[
+            str,
+            Any,
+        ] = {
+            "role": message.role,
+        }
+
+        if message.role == "assistant":
+            converted_message[
+                "content"
+            ] = (
+                message.content
+                if message.content
+                else None
             )
 
-        converted_message = {
-            "role": message.role,
-            "content": message.content,
-        }
+            if message.tool_calls:
+                converted_message[
+                    "tool_calls"
+                ] = [
+                    convert_tool_call_for_groq(
+                        tool_call
+                    )
+                    for tool_call in message.tool_calls
+                ]
+
+        elif message.role == "tool":
+            if not message.tool_call_id:
+                raise LLMRequestValidationError(
+                    "Groq tool-result messages are not enabled while "
+                    "controlled tool execution is disabled for "
+                    "unlinked results. A tool_call_id is required."
+                )
+
+            converted_message[
+                "content"
+            ] = message.content
+            converted_message[
+                "tool_call_id"
+            ] = message.tool_call_id
+
+        else:
+            converted_message[
+                "content"
+            ] = message.content
 
         if message.name:
             converted_message[
@@ -331,6 +388,165 @@ def convert_messages_for_groq(
         )
 
     return converted_messages
+
+
+def convert_tools_for_groq(
+    request: LLMRequest,
+) -> list[dict[str, Any]]:
+    """Convert controlled local tool definitions to Groq schemas."""
+
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            },
+        }
+        for tool in request.tools
+    ]
+
+
+def parse_groq_tool_calls(
+    *,
+    raw_tool_calls: list[Any],
+    request: LLMRequest,
+) -> list[LLMToolCall]:
+    """Validate and normalize Groq local tool-call requests."""
+
+    if not raw_tool_calls:
+        return []
+
+    if request.tool_choice == "none":
+        raise LLMProviderResponseError(
+            "Groq returned tool calls while tool_choice='none'."
+        )
+
+    requested_tool_names = {
+        tool.name
+        for tool in request.tools
+    }
+
+    if not requested_tool_names:
+        raise LLMProviderResponseError(
+            "Groq returned tool calls when no tool definitions "
+            "were supplied."
+        )
+
+    parsed_tool_calls: list[
+        LLMToolCall
+    ] = []
+    seen_tool_call_ids: set[
+        str
+    ] = set()
+
+    for raw_tool_call in raw_tool_calls:
+        tool_call_id = normalize_text(
+            getattr(
+                raw_tool_call,
+                "id",
+                "",
+            )
+        )
+
+        if not tool_call_id:
+            raise LLMProviderResponseError(
+                "Groq returned a tool call without an ID."
+            )
+
+        if tool_call_id in seen_tool_call_ids:
+            raise LLMProviderResponseError(
+                "Groq returned duplicate tool-call IDs."
+            )
+
+        call_type = normalize_text(
+            getattr(
+                raw_tool_call,
+                "type",
+                "function",
+            )
+        ).casefold()
+
+        if call_type != "function":
+            raise LLMProviderResponseError(
+                "Groq returned an unsupported tool-call type."
+            )
+
+        function = getattr(
+            raw_tool_call,
+            "function",
+            None,
+        )
+
+        if function is None:
+            raise LLMProviderResponseError(
+                "Groq returned a tool call without function data."
+            )
+
+        tool_name = normalize_text(
+            getattr(
+                function,
+                "name",
+                "",
+            )
+        )
+
+        if (
+            tool_name not in requested_tool_names
+            or tool_name not in request.allowed_tools
+        ):
+            raise LLMProviderResponseError(
+                "Groq requested an unapproved tool: "
+                f"{tool_name or '<missing>'}."
+            )
+
+        raw_arguments = getattr(
+            function,
+            "arguments",
+            None,
+        )
+
+        if not isinstance(
+            raw_arguments,
+            str,
+        ):
+            raise LLMProviderResponseError(
+                "Groq tool-call arguments must be a JSON string."
+            )
+
+        try:
+            parsed_arguments = json.loads(
+                raw_arguments
+            )
+
+        except JSONDecodeError as error:
+            raise LLMProviderResponseError(
+                "Groq returned invalid JSON tool arguments."
+            ) from error
+
+        if not isinstance(
+            parsed_arguments,
+            dict,
+        ):
+            raise LLMProviderResponseError(
+                "Groq tool-call arguments must decode to "
+                "a JSON object."
+            )
+
+        parsed_tool_calls.append(
+            LLMToolCall(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments=parsed_arguments,
+            )
+        )
+
+        seen_tool_call_ids.add(
+            tool_call_id
+        )
+
+    return parsed_tool_calls
 
 
 def get_completion_usage(
@@ -418,10 +634,7 @@ def map_finish_reason(
         "tool_calls",
         "function_call",
     }:
-        raise LLMProviderResponseError(
-            "Groq returned a tool call while controlled tools are "
-            "disabled."
-        )
+        return "tool_call"
 
     raise LLMProviderResponseError(
         "Groq returned an unsupported finish reason: "
@@ -478,12 +691,10 @@ class GroqProvider(BaseLLMProvider):
     ) -> None:
         """Reject a request that could exceed its cost ceiling."""
 
-        message_text = "\n".join(
-            message.content
-            for message in request.messages
-        )
-        estimated_input_tokens = estimate_tokens(
-            message_text
+        estimated_input_tokens = (
+            estimate_request_input_tokens(
+                request
+            )
         )
 
         maximum_estimated_cost = (
@@ -577,6 +788,22 @@ class GroqProvider(BaseLLMProvider):
             "stream": False,
         }
 
+        if request.tools:
+            request_arguments[
+                "tools"
+            ] = convert_tools_for_groq(
+                request
+            )
+            request_arguments[
+                "tool_choice"
+            ] = request.tool_choice
+
+            # Keep the provider turn deterministic. The application
+            # executor/orchestration loop is added in Part 5B.
+            request_arguments[
+                "parallel_tool_calls"
+            ] = False
+
         if model_name.casefold() in {
             "openai/gpt-oss-20b",
             "openai/gpt-oss-120b",
@@ -591,12 +818,22 @@ class GroqProvider(BaseLLMProvider):
                 "include_reasoning"
             ] = False
 
-        (
-            response_format,
-            response_format_mode,
-        ) = build_groq_response_format(
-            request
-        )
+        if (
+            request.tools
+            and request.tool_choice != "none"
+        ):
+            # Tool-selection turns may legitimately return no content.
+            # Final structured output is enforced after tool execution
+            # with tool_choice='none' in Part 5B.
+            response_format = None
+            response_format_mode = "tool_call_selection"
+        else:
+            (
+                response_format,
+                response_format_mode,
+            ) = build_groq_response_format(
+                request
+            )
 
         if response_format is not None:
             request_arguments[
@@ -756,7 +993,7 @@ class GroqProvider(BaseLLMProvider):
                 + refusal[:500]
             )
 
-        tool_calls = (
+        raw_tool_calls = (
             getattr(
                 message,
                 "tool_calls",
@@ -765,10 +1002,37 @@ class GroqProvider(BaseLLMProvider):
             or []
         )
 
-        if tool_calls:
+        finish_reason = map_finish_reason(
+            getattr(
+                first_choice,
+                "finish_reason",
+                "",
+            )
+        )
+
+        tool_calls = parse_groq_tool_calls(
+            raw_tool_calls=list(
+                raw_tool_calls
+            ),
+            request=request,
+        )
+
+        if (
+            finish_reason == "tool_call"
+            and not tool_calls
+        ):
             raise LLMProviderResponseError(
-                "Groq returned tool calls while tools are "
-                "disabled for Day 35."
+                "Groq returned a tool-call finish reason "
+                "without tool_calls."
+            )
+
+        if (
+            tool_calls
+            and finish_reason != "tool_call"
+        ):
+            raise LLMProviderResponseError(
+                "Groq returned tool_calls without a "
+                "tool-call finish reason."
             )
 
         raw_content = getattr(
@@ -777,42 +1041,45 @@ class GroqProvider(BaseLLMProvider):
             None,
         )
         content = (
-            str(raw_content).strip()
+            str(
+                raw_content
+            ).strip()
             if raw_content is not None
             else ""
         )
-
-        if not content:
-            raise LLMProviderResponseError(
-                "The Groq response did not contain text."
-            )
 
         structured_output: (
             dict[str, Any]
             | None
         ) = None
 
-        if request.require_json_object:
-            try:
-                parsed_output = json.loads(
-                    content
+        if not tool_calls:
+            if not content:
+                raise LLMProviderResponseError(
+                    "The Groq response did not contain text."
                 )
 
-            except JSONDecodeError as error:
-                raise LLMProviderResponseError(
-                    "The Groq response was not valid JSON."
-                ) from error
+            if request.require_json_object:
+                try:
+                    parsed_output = json.loads(
+                        content
+                    )
 
-            if not isinstance(
-                parsed_output,
-                dict,
-            ):
-                raise LLMProviderResponseError(
-                    "The Groq structured response must be "
-                    "a JSON object."
-                )
+                except JSONDecodeError as error:
+                    raise LLMProviderResponseError(
+                        "The Groq response was not valid JSON."
+                    ) from error
 
-            structured_output = parsed_output
+                if not isinstance(
+                    parsed_output,
+                    dict,
+                ):
+                    raise LLMProviderResponseError(
+                        "The Groq structured response must be "
+                        "a JSON object."
+                    )
+
+                structured_output = parsed_output
 
         (
             input_tokens,
@@ -858,14 +1125,6 @@ class GroqProvider(BaseLLMProvider):
                 "",
             )
         )
-        finish_reason = map_finish_reason(
-            getattr(
-                first_choice,
-                "finish_reason",
-                "",
-            )
-        )
-
         return LLMResponse(
             request_id=request.request_id,
             provider_name=self.provider_name,
@@ -874,6 +1133,7 @@ class GroqProvider(BaseLLMProvider):
             structured_output=(
                 structured_output
             ),
+            tool_calls=tool_calls,
             usage=LLMTokenUsage(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -943,6 +1203,16 @@ class GroqProvider(BaseLLMProvider):
                     estimated_cost_usd
                 ),
                 "actual_charge_not_verified": True,
-                "tools_enabled": False,
+                "tools_enabled": bool(
+                    request.tools
+                ),
+                "tool_choice": (
+                    request.tool_choice
+                    if request.tools
+                    else None
+                ),
+                "tool_call_count": len(
+                    tool_calls
+                ),
             },
         )

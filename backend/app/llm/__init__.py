@@ -1,5 +1,6 @@
 from backend.app.llm.base_provider import (
     BaseLLMProvider,
+    estimate_request_input_tokens,
     estimate_tokens,
     mask_sensitive_text,
     mask_sensitive_value,
@@ -26,6 +27,8 @@ from backend.app.llm.llm_models import (
     LLMRequest,
     LLMResponse,
     LLMTokenUsage,
+    LLMToolCall,
+    LLMToolDefinition,
 )
 from backend.app.llm.mock_provider import (
     MockLLMProvider,
@@ -62,6 +65,8 @@ __all__ = [
     "LLMResponse",
     "LLMTimeoutError",
     "LLMTokenUsage",
+    "LLMToolCall",
+    "LLMToolDefinition",
     "LLMToolPermissionError",
     "MockLLMProvider",
     "PromptRegistry",
@@ -69,6 +74,7 @@ __all__ = [
     "build_provider_config_from_settings",
     "default_prompt_registry",
     "default_provider_registry",
+    "estimate_request_input_tokens",
     "estimate_tokens",
     "get_configured_provider",
     "mask_sensitive_text",

@@ -245,4 +245,54 @@ class Settings:
     )
 
 
+    # Controlled application tool execution remains disabled until
+    # explicitly enabled. Provider LLM_ALLOWED_TOOLS is a separate gate.
+    agent_tools_enabled: bool = read_boolean(
+        "AGENT_TOOLS_ENABLED",
+        False,
+    )
+    agent_write_tools_enabled: bool = read_boolean(
+        "AGENT_WRITE_TOOLS_ENABLED",
+        False,
+    )
+    agent_tool_timeout_seconds: float = read_float(
+        "AGENT_TOOL_TIMEOUT_SECONDS",
+        5.0,
+    )
+
+
+    # Arbitrary SQL remains separately disabled even after general
+    # read-only agent tools are enabled.
+    agent_read_only_sql_enabled: bool = read_boolean(
+        "AGENT_READ_ONLY_SQL_ENABLED",
+        False,
+    )
+    agent_read_only_sql_statement_timeout_ms: int = read_integer(
+        "AGENT_READ_ONLY_SQL_STATEMENT_TIMEOUT_MS",
+        2000,
+    )
+    agent_read_only_sql_max_rows: int = read_integer(
+        "AGENT_READ_ONLY_SQL_MAX_ROWS",
+        20,
+    )
+
+    # Recommendation-to-task tool remains separately disabled until
+    # explicitly enabled for reviewed use.
+    agent_task_conversion_tool_enabled: bool = read_boolean(
+        "AGENT_TASK_CONVERSION_TOOL_ENABLED",
+        False,
+    )
+
+
+    # Controlled provider/tool orchestration limits.
+    agent_llm_tool_max_rounds: int = read_integer(
+        "AGENT_LLM_TOOL_MAX_ROUNDS",
+        2,
+    )
+    agent_llm_tool_result_max_chars: int = read_integer(
+        "AGENT_LLM_TOOL_RESULT_MAX_CHARS",
+        20000,
+    )
+
+
 settings = Settings()

@@ -4,6 +4,9 @@ from backend.app.core.config import settings
 from backend.app.routers.analytics import (
     router as analytics_router,
 )
+from backend.app.routers.automations import (
+    router as automation_router,
+)
 from backend.app.routers.chief_of_staff import (
     router as chief_of_staff_router,
 )
@@ -47,6 +50,7 @@ app = FastAPI(
 
 
 app.include_router(health_router)
+app.include_router(automation_router)
 app.include_router(kpi_router)
 app.include_router(knowledge_router)
 app.include_router(issue_router)

@@ -295,4 +295,52 @@ class Settings:
     )
 
 
+    # Automation / n8n integration remains opt-in. The API never sends
+    # workflow requests unless this gate is explicitly enabled.
+    automation_enabled: bool = read_boolean(
+        "AUTOMATION_ENABLED",
+        False,
+    )
+    automation_api_secret: str = os.getenv(
+        "AUTOMATION_API_SECRET",
+        "",
+    ).strip()
+    n8n_webhook_base_url: str = os.getenv(
+        "N8N_WEBHOOK_BASE_URL",
+        "",
+    ).strip()
+    n8n_outbound_auth_token: str = os.getenv(
+        "N8N_OUTBOUND_AUTH_TOKEN",
+        "",
+    ).strip()
+    n8n_callback_secret: str = os.getenv(
+        "N8N_CALLBACK_SECRET",
+        "",
+    ).strip()
+    n8n_timeout_seconds: float = read_float(
+        "N8N_TIMEOUT_SECONDS",
+        10.0,
+    )
+    n8n_max_retries: int = read_integer(
+        "N8N_MAX_RETRIES",
+        2,
+    )
+    n8n_retry_backoff_seconds: float = read_float(
+        "N8N_RETRY_BACKOFF_SECONDS",
+        0.5,
+    )
+    n8n_high_priority_alert_path: str = os.getenv(
+        "N8N_HIGH_PRIORITY_ALERT_PATH",
+        "high-priority-alert",
+    ).strip()
+    n8n_task_reminder_path: str = os.getenv(
+        "N8N_TASK_REMINDER_PATH",
+        "task-reminder",
+    ).strip()
+    n8n_overdue_escalation_path: str = os.getenv(
+        "N8N_OVERDUE_ESCALATION_PATH",
+        "overdue-escalation",
+    ).strip()
+
+
 settings = Settings()

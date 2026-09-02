@@ -91,12 +91,36 @@ CREATE TABLE IF NOT EXISTS automation_logs (
     automation_log_id BIGSERIAL PRIMARY KEY,
     task_id BIGINT REFERENCES tasks(task_id)
         ON DELETE SET NULL,
+    issue_id VARCHAR(220) REFERENCES issues(issue_id)
+        ON DELETE SET NULL,
     workflow_name VARCHAR(150) NOT NULL,
     action_type VARCHAR(150) NOT NULL,
     execution_status VARCHAR(50) NOT NULL,
+    idempotency_key VARCHAR(200) NOT NULL,
+    n8n_execution_id VARCHAR(200),
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    http_status_code INTEGER,
     message TEXT,
-    executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    error_type VARCHAR(150),
+    error_message TEXT,
+    request_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT automation_logs_attempt_count_check
+        CHECK (attempt_count >= 1),
+
+    CONSTRAINT automation_logs_http_status_code_check
+        CHECK (
+            http_status_code IS NULL
+            OR http_status_code BETWEEN 100 AND 599
+        ),
+
+    CONSTRAINT automation_logs_request_metadata_json_check
+        CHECK (
+            JSONB_TYPEOF(request_metadata) = 'object'
+        )
 );
+
 
 CREATE TABLE IF NOT EXISTS executive_briefs (
     brief_id BIGSERIAL PRIMARY KEY,
@@ -211,6 +235,23 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_recommendation_unique
     ON tasks(recommendation_id)
     WHERE recommendation_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_logs_idempotency_key_unique
+    ON automation_logs(idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_automation_logs_status_executed
+    ON automation_logs(
+        execution_status,
+        executed_at DESC
+    );
+
+CREATE INDEX IF NOT EXISTS idx_automation_logs_task_id
+    ON automation_logs(task_id)
+    WHERE task_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_automation_logs_issue_id
+    ON automation_logs(issue_id)
+    WHERE issue_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_started
     ON agent_runs(

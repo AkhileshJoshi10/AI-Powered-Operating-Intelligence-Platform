@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     Numeric,
     String,
     Text,
@@ -447,6 +448,32 @@ class AutomationLog(Base):
 
     __tablename__ = "automation_logs"
 
+    __table_args__ = (
+        CheckConstraint(
+            "attempt_count >= 1",
+            name="automation_logs_attempt_count_check",
+        ),
+        CheckConstraint(
+            "http_status_code IS NULL "
+            "OR http_status_code BETWEEN 100 AND 599",
+            name="automation_logs_http_status_code_check",
+        ),
+        CheckConstraint(
+            "JSONB_TYPEOF(request_metadata) = 'object'",
+            name="automation_logs_request_metadata_json_check",
+        ),
+        Index(
+            "idx_automation_logs_idempotency_key_unique",
+            "idempotency_key",
+            unique=True,
+        ),
+        Index(
+            "idx_automation_logs_status_executed",
+            "execution_status",
+            "executed_at",
+        ),
+    )
+
     automation_log_id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True,
@@ -456,6 +483,13 @@ class AutomationLog(Base):
         BigInteger,
         ForeignKey(
             "tasks.task_id",
+            ondelete="SET NULL",
+        ),
+    )
+    issue_id: Mapped[str | None] = mapped_column(
+        String(220),
+        ForeignKey(
+            "issues.issue_id",
             ondelete="SET NULL",
         ),
     )
@@ -471,8 +505,34 @@ class AutomationLog(Base):
         String(50),
         nullable=False,
     )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+    n8n_execution_id: Mapped[str | None] = mapped_column(
+        String(200),
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    http_status_code: Mapped[int | None] = mapped_column(
+        Integer,
+    )
     message: Mapped[str | None] = mapped_column(
         Text,
+    )
+    error_type: Mapped[str | None] = mapped_column(
+        String(150),
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+    )
+    request_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
     )
     executed_at: Mapped[datetime] = mapped_column(
         DateTime,

@@ -180,7 +180,7 @@ def unique_non_empty(values: pd.Series) -> list[str]:
 
 
 def load_all_findings() -> pd.DataFrame:
-    """Load detailed finding reports created during Days 10 to 13."""
+    """Load detailed finding reports."""
 
     all_frames = []
 

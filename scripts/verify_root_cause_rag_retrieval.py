@@ -21,10 +21,10 @@ TEST_DOCUMENT_TITLE = (
     "SmartMart Inventory and Vendor Escalation Policy"
 )
 TEST_DOCUMENT_KEY = (
-    "day34-root-cause-rag-test-policy"
+    "root-cause-rag-test-policy"
 )
 TEST_METADATA = {
-    "purpose": "day34-root-cause-rag-validation",
+    "purpose": "root-cause-rag-validation",
     "synthetic": True,
 }
 
@@ -114,7 +114,7 @@ def main() -> None:
             8,
             1,
         ),
-        created_by="day34-rag-validation",
+        created_by="rag-validation",
         metadata=dict(
             TEST_METADATA
         ),
@@ -312,7 +312,7 @@ def main() -> None:
     )
     print()
     print(
-        "DAY 34 ROOT-CAUSE POSTGRESQL RAG RETRIEVAL PASSED"
+        "ROOT-CAUSE POSTGRESQL RAG RETRIEVAL PASSED"
     )
 
 

@@ -859,7 +859,7 @@ def detect_unresolved_complaint_ageing(engine: Engine) -> list[dict]:
 
 
 def run_complaint_analysis(engine: Engine) -> pd.DataFrame:
-    """Run all Day 12 complaint-analysis rules."""
+    """Run all complaint-analysis rules."""
 
     findings = []
 
@@ -1075,7 +1075,7 @@ def print_primary_scenario_check(findings: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    """Run Day 12 complaint analytics and save output files."""
+    """Run complaint analytics and save output files."""
 
     REPORTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
 

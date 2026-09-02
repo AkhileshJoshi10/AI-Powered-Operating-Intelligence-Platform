@@ -186,10 +186,10 @@ async def main(
     )
 
     execution_context = ToolExecutionContext(
-        run_id="DAY35-LIVE-CONTROLLED-TOOL-001",
+        run_id="LIVE-CONTROLLED-TOOL-001",
         agent_name=AGENT_NAME,
         requested_by=(
-            "Day 35 live controlled tool validation"
+            "Live controlled tool validation"
         ),
         allowed_tools=[
             TOOL_NAME
@@ -231,12 +231,12 @@ async def main(
 
     request = LLMRequest(
         request_id=(
-            "day35-live-controlled-tool-request"
+            "live-controlled-tool-request"
         ),
         agent_name=AGENT_NAME,
         agent_version="1.0.0",
         prompt_name=(
-            "day35_live_controlled_tool_validation"
+            "live_controlled_tool_validation"
         ),
         prompt_version="v1",
         messages=[
@@ -265,7 +265,7 @@ async def main(
             ),
         ],
         response_schema_name=(
-            "Day35ControlledToolValidationV1"
+            "ControlledToolValidationV1"
         ),
         model_name=MODEL_NAME,
         max_output_tokens=500,
@@ -285,7 +285,7 @@ async def main(
                 response_schema
             ),
             "response_json_schema_name": (
-                "Day35ControlledToolValidationV1"
+                "ControlledToolValidationV1"
             ),
             "response_json_schema_strict": True,
         },
@@ -480,7 +480,7 @@ async def main(
     if failures:
         print()
         print(
-            "DAY 35 LIVE CONTROLLED TOOL VALIDATION FAILED"
+            "LIVE CONTROLLED TOOL VALIDATION FAILED"
         )
 
         for failure in failures:
@@ -490,12 +490,12 @@ async def main(
             )
 
         raise RuntimeError(
-            "Day 35 live controlled Groq tool validation failed."
+            "Live controlled Groq tool validation failed."
         )
 
     print()
     print(
-        "DAY 35 LIVE CONTROLLED READ-ONLY TOOL VALIDATION PASSED"
+        "LIVE CONTROLLED READ-ONLY TOOL VALIDATION PASSED"
     )
 
 

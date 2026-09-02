@@ -557,7 +557,7 @@ def detect_expired_inventory(snapshot: pd.DataFrame) -> list[dict]:
 
 
 def run_inventory_analysis(engine: Engine) -> pd.DataFrame:
-    """Run all Day 11 inventory-analysis rules."""
+    """Run all inventory-analysis rules."""
 
     print("Reading inventory snapshot...")
     snapshot = get_inventory_snapshot(engine)
@@ -764,7 +764,7 @@ def print_primary_scenario_check(findings: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    """Run Day 11 inventory analytics and save output files."""
+    """Run inventory analytics and save output files."""
 
     REPORTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
 

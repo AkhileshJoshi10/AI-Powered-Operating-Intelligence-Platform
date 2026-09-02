@@ -68,7 +68,7 @@ def parse_arguments(
         "--require-rag",
         action="store_true",
         help=(
-            "Require supported Day 34 agents to retrieve real "
+            "Require supported agents to retrieve real "
             "PostgreSQL knowledge and return at least one allowed "
             "DOC-* knowledge citation. Supported single-agent modes: "
             "root-cause and recommendation."
@@ -1054,33 +1054,33 @@ async def main() -> None:
     context = AgentContext(
         run_type=(
             (
-                "day34-live-root-cause-rag-test"
+                "live-root-cause-rag-test"
                 if arguments.agent == "root-cause"
                 else (
-                    "day34-live-recommendation-rag-test"
+                    "live-recommendation-rag-test"
                     if arguments.agent == "recommendation"
                     else (
-                        "day34-live-executive-brief-rag-test"
+                        "live-executive-brief-rag-test"
                         if arguments.agent == "executive-brief"
-                        else "day34-live-multi-agent-rag-test"
+                        else "live-multi-agent-rag-test"
                     )
                 )
             )
             if arguments.require_rag
             else (
-                "day36-live-groq-five-agent-test"
+                "live-groq-five-agent-test"
                 if arguments.agent == "all"
                 else (
-                    "day36-live-groq-"
+                    "live-groq-"
                     + arguments.agent
                     + "-test"
                 )
             )
         ),
         requested_by=(
-            "manual-day34-rag"
+            "manual-rag"
             if arguments.require_rag
-            else "manual-day36"
+            else "manual"
         ),
         input_data={
             "finding_limit": 3,
@@ -1467,23 +1467,23 @@ async def main() -> None:
         if arguments.require_rag:
             if arguments.agent == "root-cause":
                 failure_heading = (
-                    "DAY 34 ROOT-CAUSE LIVE RAG VALIDATION FAILED"
+                    "ROOT-CAUSE LIVE RAG VALIDATION FAILED"
                 )
             elif arguments.agent == "recommendation":
                 failure_heading = (
-                    "DAY 34 RECOMMENDATION LIVE RAG VALIDATION FAILED"
+                    "RECOMMENDATION LIVE RAG VALIDATION FAILED"
                 )
             elif arguments.agent == "executive-brief":
                 failure_heading = (
-                    "DAY 34 EXECUTIVE BRIEF LIVE RAG VALIDATION FAILED"
+                    "EXECUTIVE BRIEF LIVE RAG VALIDATION FAILED"
                 )
             else:
                 failure_heading = (
-                    "DAY 34 MULTI-AGENT LIVE RAG VALIDATION FAILED"
+                    "MULTI-AGENT LIVE RAG VALIDATION FAILED"
                 )
         else:
             failure_heading = (
-                "DAY 36 LIVE VALIDATION FAILED"
+                "LIVE VALIDATION FAILED"
             )
 
         print(
@@ -1499,23 +1499,23 @@ async def main() -> None:
         if arguments.require_rag:
             if arguments.agent == "root-cause":
                 failure_message = (
-                    "Day 34 Root-Cause live RAG validation failed."
+                    "Root-Cause live RAG validation failed."
                 )
             elif arguments.agent == "recommendation":
                 failure_message = (
-                    "Day 34 Recommendation live RAG validation failed."
+                    "Recommendation live RAG validation failed."
                 )
             elif arguments.agent == "executive-brief":
                 failure_message = (
-                    "Day 34 Executive Brief live RAG validation failed."
+                    "Executive Brief live RAG validation failed."
                 )
             else:
                 failure_message = (
-                    "Day 34 multi-agent live RAG validation failed."
+                    "Multi-Agent live RAG validation failed."
                 )
         else:
             failure_message = (
-                "Day 36 live Groq five-agent validation failed."
+                "Live Groq five-agent validation failed."
             )
 
         raise RuntimeError(
@@ -1526,27 +1526,27 @@ async def main() -> None:
     if arguments.require_rag:
         if arguments.agent == "root-cause":
             print(
-                "DAY 34 ROOT-CAUSE LIVE RAG VALIDATION PASSED"
+                "ROOT-CAUSE LIVE RAG VALIDATION PASSED"
             )
         elif arguments.agent == "recommendation":
             print(
-                "DAY 34 RECOMMENDATION LIVE RAG VALIDATION PASSED"
+                "RECOMMENDATION LIVE RAG VALIDATION PASSED"
             )
         elif arguments.agent == "executive-brief":
             print(
-                "DAY 34 EXECUTIVE BRIEF LIVE RAG VALIDATION PASSED"
+                "EXECUTIVE BRIEF LIVE RAG VALIDATION PASSED"
             )
         else:
             print(
-                "DAY 34 MULTI-AGENT LIVE RAG VALIDATION PASSED"
+                "MULTI-AGENT LIVE RAG VALIDATION PASSED"
             )
     elif arguments.agent == "all":
         print(
-            "DAY 36 LIVE FIVE-AGENT VALIDATION PASSED"
+            "LIVE FIVE-AGENT VALIDATION PASSED"
         )
     else:
         print(
-            "DAY 36 LIVE AGENT VALIDATION PASSED:",
+            "LIVE AGENT VALIDATION PASSED:",
             selected_sequence[0],
         )
 

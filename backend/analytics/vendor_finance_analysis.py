@@ -728,7 +728,7 @@ def detect_high_financial_risk(
 
 
 def run_vendor_finance_analysis(engine: Engine) -> pd.DataFrame:
-    """Run all Day 13 vendor and finance analytics rules."""
+    """Run all vendor and finance analytics rules."""
 
     print("Reading vendor performance data...")
     vendor_snapshot = get_vendor_snapshot(engine)
@@ -966,7 +966,7 @@ def print_primary_scenario_check(findings: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    """Run Day 13 vendor and finance analytics."""
+    """Run vendor and finance analytics."""
 
     REPORTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
 

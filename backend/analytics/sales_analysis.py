@@ -835,7 +835,7 @@ def detect_regional_sales_decline(engine: Engine) -> list[dict]:
 
 
 def run_sales_analysis(engine: Engine) -> pd.DataFrame:
-    """Run all Day 10 sales-analysis rules."""
+    """Run all sales-analysis rules."""
 
     findings = []
 
@@ -1058,7 +1058,7 @@ def print_primary_scenario_check(findings: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    """Run Day 10 sales analytics and save output files."""
+    """Run sales analytics and save output files."""
 
     REPORTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
 

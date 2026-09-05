@@ -1,0 +1,254 @@
+{
+  "name": "AI Chief of Staff - High Priority Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "high-priority-alert",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -560,
+        112
+      ],
+      "id": "...",
+      "name": "Webhook",
+      "webhookId": "...",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "N8N_OUTBOUND_AUTH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_RECIPIENT_EMAIL",
+        "subject": "={{ '[HIGH PRIORITY] ' + $('Webhook').item.json.body.data.issue.title }}",
+        "emailFormat": "text",
+        "text": "={{ 'High-priority business issue detected.\\n\\n'\n+ 'Issue ID: ' + ($('Webhook').item.json.body.data.issue.issue_id || 'N/A') + '\\n'\n+ 'Title: ' + ($('Webhook').item.json.body.data.issue.title || 'N/A') + '\\n'\n+ 'Business area: ' + ($('Webhook').item.json.body.data.issue.business_area || 'N/A') + '\\n'\n+ 'Priority: ' + ($('Webhook').item.json.body.data.issue.priority_level || 'N/A') + '\\n'\n+ 'Priority score: ' + ($('Webhook').item.json.body.data.issue.priority_score ?? 'N/A') + '\\n'\n+ 'Store: ' + ($('Webhook').item.json.body.data.issue.store_id || 'N/A') + '\\n'\n+ 'Product: ' + ($('Webhook').item.json.body.data.issue.product_id || 'N/A') + '\\n'\n+ 'Vendor: ' + ($('Webhook').item.json.body.data.issue.vendor_id || 'N/A') + '\\n\\n'\n+ 'Summary:\\n' + ($('Webhook').item.json.body.data.issue.summary || 'No summary available.') + '\\n\\n'\n+ 'Priority reason:\\n' + ($('Webhook').item.json.body.data.issue.priority_reason || 'No priority reason available.')\n}}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        112
+      ],
+      "id": "323acee8-5aa8-443b-a47d-3eac889db703",
+      "name": "Send High Priority Alert Email",
+      "webhookId": "...",
+      "credentials": {
+        "smtp": {
+          "id": "...",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Webhook').item.json.body.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Succeeded"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Notification workflow completed successfully."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "...",
+      "name": "Record Success Callback",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Webhook').item.json.body.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Failed"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Notification workflow failed during email delivery."
+            },
+            {
+              "name": "error_type",
+              "value": "EmailDeliveryError"
+            },
+            {
+              "name": "error_message",
+              "value": "={{ $json.error?.message || $json.error || 'Email delivery failed.' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        224
+      ],
+      "id": "...",
+      "name": "Record Failure Callback",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"executionId\": $execution.id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        0
+      ],
+      "id": "...",
+      "name": "Respond Success"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"failed\", \"executionId\": $execution.id } }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        224
+      ],
+      "id": "...",
+      "name": "Respond Failure"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send High Priority Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send High Priority Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Record Success Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Failure Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Success Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Failure Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "...",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "..."
+  },
+  "id": "...",
+  "tags": []
+}

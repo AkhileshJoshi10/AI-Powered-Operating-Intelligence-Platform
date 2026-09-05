@@ -1,0 +1,254 @@
+{
+  "name": "AI Chief of Staff - Overdue Task Escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "overdue-escalation",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -560,
+        112
+      ],
+      "id": "...",
+      "name": "Webhook",
+      "webhookId": "...",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "N8N_OUTBOUND_AUTH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_RECIPIENT_EMAIL",
+        "subject": "={{ '[OVERDUE TASK] ' + $('Webhook').item.json.body.data.task.title }}",
+        "emailFormat": "text",
+        "text": "={{ 'Overdue task escalation from AI Chief of Staff.\\n\\n'\n+ 'Task ID: ' + ($('Webhook').item.json.body.data.task.task_id ?? 'N/A') + '\\n'\n+ 'Title: ' + ($('Webhook').item.json.body.data.task.title || 'N/A') + '\\n'\n+ 'Assigned to: ' + ($('Webhook').item.json.body.data.task.assigned_to || 'Unassigned') + '\\n'\n+ 'Assigned role: ' + ($('Webhook').item.json.body.data.task.assigned_role || 'N/A') + '\\n'\n+ 'Priority: ' + ($('Webhook').item.json.body.data.task.priority_level || 'N/A') + '\\n'\n+ 'Status: ' + ($('Webhook').item.json.body.data.task.status || 'N/A') + '\\n'\n+ 'Due date: ' + ($('Webhook').item.json.body.data.task.due_date || 'No due date') + '\\n'\n+ 'Issue: ' + ($('Webhook').item.json.body.data.task.issue_title || 'N/A') + '\\n'\n+ 'Business area: ' + ($('Webhook').item.json.body.data.task.business_area || 'N/A') + '\\n\\n'\n+ 'Escalation reason: The task is incomplete and its due date has passed.\\n\\n'\n+ 'Description:\\n' + ($('Webhook').item.json.body.data.task.description || 'No description available.')\n}}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        112
+      ],
+      "id": "...",
+      "name": "Send Overdue Escalation Email",
+      "webhookId": "...",
+      "credentials": {
+        "smtp": {
+          "id": "...",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Webhook').item.json.body.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Succeeded"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Notification workflow completed successfully."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "...",
+      "name": "Record Success Callback",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7lTudwGjAqa54r6A",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Webhook').item.json.body.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Failed"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Notification workflow failed during email delivery."
+            },
+            {
+              "name": "error_type",
+              "value": "EmailDeliveryError"
+            },
+            {
+              "name": "error_message",
+              "value": "={{ $json.error?.message || $json.error || 'Email delivery failed.' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        224
+      ],
+      "id": "...",
+      "name": "Record Failure Callback",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7lTudwGjAqa54r6A",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"executionId\": $execution.id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        0
+      ],
+      "id": "...",
+      "name": "Respond Success"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"failed\", \"executionId\": $execution.id } }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        224
+      ],
+      "id": "...",
+      "name": "Respond Failure"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Overdue Escalation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Overdue Escalation Email": {
+      "main": [
+        [
+          {
+            "node": "Record Success Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Failure Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Success Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Failure Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "...",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "..."
+  },
+  "id": "...",
+  "tags": []
+}

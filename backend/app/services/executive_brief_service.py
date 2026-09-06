@@ -31,6 +31,10 @@ TOP_RECOMMENDATION_LIMIT = 10
 TOP_TASK_LIMIT = 10
 TASK_SCAN_LIMIT = 1000
 
+AUTOMATION_RECENT_LIMIT = 10
+AUTOMATION_CATEGORY_LIMIT = 5
+DAILY_BRIEF_AUTOMATION_ACTION = "daily_executive_brief"
+
 
 RECOMMENDATION_STATUSES = [
     "Pending Review",
@@ -489,6 +493,227 @@ def build_task_snapshot() -> dict[str, Any]:
     }
 
 
+def serialize_automation_log(
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Convert one automation log row into brief-safe data."""
+
+    return {
+        "automation_log_id": int(row["automation_log_id"]),
+        "task_id": (
+            int(row["task_id"])
+            if row["task_id"] is not None
+            else None
+        ),
+        "issue_id": row["issue_id"],
+        "workflow_name": str(row["workflow_name"]).strip(),
+        "action_type": str(row["action_type"]).strip(),
+        "execution_status": str(row["execution_status"]).strip(),
+        "n8n_execution_id": row["n8n_execution_id"],
+        "attempt_count": int(row["attempt_count"] or 0),
+        "http_status_code": (
+            int(row["http_status_code"])
+            if row["http_status_code"] is not None
+            else None
+        ),
+        "message": row["message"],
+        "error_type": row["error_type"],
+        "error_message": row["error_message"],
+        "executed_at": row["executed_at"],
+    }
+
+
+def get_recent_automation_logs(
+    *,
+    action_type: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """
+    Return recent operational automation logs.
+
+    Explicit manual failure-path validation records are excluded so
+    controlled test activity does not distort the Executive Brief.
+    """
+
+    query = text(
+        """
+        SELECT
+            automation_log_id,
+            task_id,
+            issue_id,
+            workflow_name,
+            action_type,
+            execution_status,
+            n8n_execution_id,
+            attempt_count,
+            http_status_code,
+            message,
+            error_type,
+            error_message,
+            executed_at
+        FROM automation_logs
+        WHERE
+            COALESCE(request_metadata ->> 'source', '') <> 'manual_validation'
+            AND COALESCE(request_metadata ->> 'purpose', '') <> 'failure_path_test'
+            AND (
+                :action_type IS NULL
+                OR action_type = :action_type
+            )
+        ORDER BY
+            executed_at DESC,
+            automation_log_id DESC
+        LIMIT :limit;
+        """
+    )
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                query,
+                {
+                    "action_type": action_type,
+                    "limit": int(limit),
+                },
+            )
+            .mappings()
+            .all()
+        )
+
+    return [
+        serialize_automation_log(row)
+        for row in rows
+    ]
+
+
+def build_automation_snapshot() -> dict[str, Any]:
+    """Build recent automation activity for the Executive Brief."""
+
+    count_query = text(
+        """
+        SELECT
+            COUNT(*) AS total_workflow_count,
+            COUNT(*) FILTER (
+                WHERE execution_status = 'Succeeded'
+            ) AS successful_workflow_count,
+            COUNT(*) FILTER (
+                WHERE execution_status = 'Failed'
+            ) AS failed_workflow_count,
+            COUNT(*) FILTER (
+                WHERE execution_status = 'Skipped'
+            ) AS skipped_workflow_count,
+            COUNT(*) FILTER (
+                WHERE execution_status IN ('Pending', 'Triggered')
+            ) AS in_progress_workflow_count
+        FROM automation_logs
+        WHERE
+            executed_at::date = CURRENT_DATE
+            AND COALESCE(request_metadata ->> 'source', '') <> 'manual_validation'
+            AND COALESCE(request_metadata ->> 'purpose', '') <> 'failure_path_test';
+        """
+    )
+
+    latest_brief_delivery_query = text(
+        """
+        SELECT
+            automation_log_id,
+            task_id,
+            issue_id,
+            workflow_name,
+            action_type,
+            execution_status,
+            n8n_execution_id,
+            attempt_count,
+            http_status_code,
+            message,
+            error_type,
+            error_message,
+            executed_at
+        FROM automation_logs
+        WHERE
+            action_type = :action_type
+            AND COALESCE(request_metadata ->> 'source', '') <> 'manual_validation'
+            AND COALESCE(request_metadata ->> 'purpose', '') <> 'failure_path_test'
+        ORDER BY
+            executed_at DESC,
+            automation_log_id DESC
+        LIMIT 1;
+        """
+    )
+
+    with engine.connect() as connection:
+        count_row = (
+            connection.execute(count_query)
+            .mappings()
+            .one()
+        )
+
+        latest_brief_delivery_row = (
+            connection.execute(
+                latest_brief_delivery_query,
+                {
+                    "action_type": DAILY_BRIEF_AUTOMATION_ACTION,
+                },
+            )
+            .mappings()
+            .one_or_none()
+        )
+
+    recent_workflow_executions = get_recent_automation_logs(
+        action_type=None,
+        limit=AUTOMATION_RECENT_LIMIT,
+    )
+
+    recent_alerts = get_recent_automation_logs(
+        action_type="high_priority_alert",
+        limit=AUTOMATION_CATEGORY_LIMIT,
+    )
+
+    recent_reminders = get_recent_automation_logs(
+        action_type="task_reminder",
+        limit=AUTOMATION_CATEGORY_LIMIT,
+    )
+
+    recent_escalations = get_recent_automation_logs(
+        action_type="overdue_escalation",
+        limit=AUTOMATION_CATEGORY_LIMIT,
+    )
+
+    last_executive_brief_delivery = (
+        serialize_automation_log(latest_brief_delivery_row)
+        if latest_brief_delivery_row is not None
+        else None
+    )
+
+    return {
+        "count_window": "today",
+        "total_workflow_count": int(
+            count_row["total_workflow_count"] or 0
+        ),
+        "successful_workflow_count": int(
+            count_row["successful_workflow_count"] or 0
+        ),
+        "failed_workflow_count": int(
+            count_row["failed_workflow_count"] or 0
+        ),
+        "skipped_workflow_count": int(
+            count_row["skipped_workflow_count"] or 0
+        ),
+        "in_progress_workflow_count": int(
+            count_row["in_progress_workflow_count"] or 0
+        ),
+        "recent_workflow_executions": recent_workflow_executions,
+        "recent_alerts": recent_alerts,
+        "recent_reminders": recent_reminders,
+        "recent_escalations": recent_escalations,
+        "last_executive_brief_delivery_status": (
+            last_executive_brief_delivery["execution_status"]
+            if last_executive_brief_delivery is not None
+            else None
+        ),
+        "last_executive_brief_delivery": last_executive_brief_delivery,
+    }
+
+
 def find_kpi_display_value(
     kpis: list[dict[str, Any]],
     search_terms: list[str],
@@ -539,6 +764,7 @@ def build_management_attention(
     issue_snapshot: dict[str, Any],
     recommendation_snapshot: dict[str, Any],
     task_snapshot: dict[str, Any],
+    automation_snapshot: dict[str, Any],
 ) -> list[str]:
     """Create deterministic executive attention points."""
 
@@ -591,6 +817,16 @@ def build_management_attention(
             f"Address {overdue_task_count} overdue tasks."
         )
 
+    failed_workflow_count = int(
+        automation_snapshot["failed_workflow_count"]
+    )
+
+    if failed_workflow_count > 0:
+        attention_points.append(
+            f"Review {failed_workflow_count} failed "
+            "automation executions recorded today."
+        )
+
     if not attention_points:
         attention_points.append(
             "No immediate critical workflow action was detected."
@@ -605,6 +841,7 @@ def build_summary_text(
     issue_snapshot: dict[str, Any],
     recommendation_snapshot: dict[str, Any],
     task_snapshot: dict[str, Any],
+    automation_snapshot: dict[str, Any],
 ) -> str:
     """Build a deterministic Executive Brief summary paragraph."""
 
@@ -649,6 +886,14 @@ def build_summary_text(
         ]
     )
 
+    successful_automations = int(
+        automation_snapshot["successful_workflow_count"]
+    )
+
+    failed_automations = int(
+        automation_snapshot["failed_workflow_count"]
+    )
+
     summary_parts = [
         (
             f"The current operating snapshot contains "
@@ -662,6 +907,11 @@ def build_summary_text(
         (
             f"There are {active_tasks} active tasks, including "
             f"{blocked_tasks} blocked and {overdue_tasks} overdue tasks."
+        ),
+        (
+            f"Today's automation activity includes "
+            f"{successful_automations} successful and "
+            f"{failed_automations} failed workflow executions."
         ),
     ]
 
@@ -735,6 +985,10 @@ def build_executive_brief_data() -> tuple[str, dict[str, Any]]:
         build_task_snapshot()
     )
 
+    automation_snapshot = (
+        build_automation_snapshot()
+    )
+
     management_attention = (
         build_management_attention(
             issue_snapshot=issue_snapshot,
@@ -742,6 +996,7 @@ def build_executive_brief_data() -> tuple[str, dict[str, Any]]:
                 recommendation_snapshot
             ),
             task_snapshot=task_snapshot,
+            automation_snapshot=automation_snapshot,
         )
     )
 
@@ -752,10 +1007,11 @@ def build_executive_brief_data() -> tuple[str, dict[str, Any]]:
             recommendation_snapshot
         ),
         task_snapshot=task_snapshot,
+        automation_snapshot=automation_snapshot,
     )
 
     brief_data = {
-        "brief_version": 1,
+        "brief_version": 2,
         "generated_at": (
             datetime.now().isoformat()
         ),
@@ -783,6 +1039,9 @@ def build_executive_brief_data() -> tuple[str, dict[str, Any]]:
         ),
         "task_snapshot": (
             task_snapshot
+        ),
+        "automation_snapshot": (
+            automation_snapshot
         ),
         "management_attention": (
             management_attention

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.services.automation_service import (
+    prepare_daily_executive_brief_delivery,
     record_n8n_callback,
 )
 from backend.app.services.n8n_client import (
@@ -39,6 +40,63 @@ SAMPLE_AUTOMATION_LOG = {
     },
     "executed_at": "2026-09-02T10:00:00",
 }
+
+
+
+def build_daily_brief_automation_log(
+    *,
+    execution_status: str = "Pending",
+) -> dict[str, Any]:
+    """Build a valid Daily Executive Brief automation log."""
+
+    return {
+        **SAMPLE_AUTOMATION_LOG,
+        "automation_log_id": 401,
+        "task_id": None,
+        "issue_id": None,
+        "workflow_name": "Daily Executive Brief",
+        "action_type": "daily_executive_brief",
+        "execution_status": execution_status,
+        "idempotency_key": (
+            "automation-daily-executive-brief-pytest-0001"
+        ),
+        "n8n_execution_id": None,
+        "attempt_count": 0,
+        "http_status_code": None,
+        "message": None,
+        "error_type": None,
+        "error_message": None,
+        "request_metadata": {
+            "source": "n8n_schedule",
+            "payload_version": "v1",
+            "schedule_date": "2026-09-06",
+        },
+        "executed_at": "2026-09-06T08:00:00",
+    }
+
+
+def build_daily_brief_item() -> dict[str, Any]:
+    """Build a valid Executive Brief item for protected n8n routes."""
+
+    return {
+        "brief_id": 401,
+        "brief_date": "2026-09-06",
+        "brief_type": "Daily Executive Brief",
+        "summary_text": (
+            "The current operating snapshot is ready for management."
+        ),
+        "brief_data": {
+            "brief_version": 2,
+            "automation_snapshot": {
+                "successful_workflow_count": 1,
+                "failed_workflow_count": 0,
+                "last_executive_brief_delivery_status": None,
+            },
+        },
+        "status": "Draft",
+        "created_at": "2026-09-06T07:59:00",
+        "updated_at": "2026-09-06T08:00:00",
+    }
 
 
 def test_automation_log_migration_columns_exist(
@@ -770,6 +828,288 @@ def test_overdue_escalation_validates_positive_task_id(
     )
 
     assert response.status_code == 422
+
+
+
+def test_daily_brief_service_rejects_when_secret_not_configured(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="",
+        ),
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/prepare"
+    )
+
+    assert response.status_code == 503
+
+
+def test_daily_brief_service_rejects_invalid_secret(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="correct-service-secret",
+        ),
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/prepare",
+        headers={
+            "X-N8N-Service-Secret": "wrong-service-secret",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_daily_brief_prepare_returns_new_request(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="service-secret",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.app.routers.automations."
+        "prepare_daily_executive_brief_delivery",
+        lambda: {
+            "outcome": "success",
+            "response": {
+                "status": "success",
+                "message": (
+                    "Today's Executive Brief delivery was prepared "
+                    "successfully."
+                ),
+                "duplicate": False,
+                "automation_log": build_daily_brief_automation_log(),
+            },
+        },
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/prepare",
+        headers={
+            "X-N8N-Service-Secret": "service-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["duplicate"] is False
+    assert (
+        response.json()["automation_log"]["action_type"]
+        == "daily_executive_brief"
+    )
+
+
+def test_daily_brief_prepare_returns_duplicate(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="service-secret",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.app.routers.automations."
+        "prepare_daily_executive_brief_delivery",
+        lambda: {
+            "outcome": "duplicate",
+            "response": {
+                "status": "success",
+                "message": (
+                    "Today's Executive Brief delivery has already "
+                    "been prepared; no duplicate delivery should run."
+                ),
+                "duplicate": True,
+                "automation_log": build_daily_brief_automation_log(),
+            },
+        },
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/prepare",
+        headers={
+            "X-N8N-Service-Secret": "service-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["duplicate"] is True
+
+
+def test_daily_brief_prepare_maps_disabled_automation(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="service-secret",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.app.routers.automations."
+        "prepare_daily_executive_brief_delivery",
+        lambda: {
+            "outcome": "disabled",
+        },
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/prepare",
+        headers={
+            "X-N8N-Service-Secret": "service-secret",
+        },
+    )
+
+    assert response.status_code == 503
+
+
+def test_daily_brief_generate_service_route_returns_brief(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="service-secret",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.app.routers.automations."
+        "generate_daily_executive_brief",
+        lambda: {
+            "status": "success",
+            "generated_at": "2026-09-06T08:00:00",
+            "action": "updated",
+            "message": (
+                "Daily Executive Brief updated successfully."
+            ),
+            "brief": build_daily_brief_item(),
+        },
+    )
+
+    response = client.post(
+        "/api/automations/daily-executive-brief/generate",
+        headers={
+            "X-N8N-Service-Secret": "service-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "updated"
+    assert (
+        response.json()["brief"]["brief_data"]["brief_version"]
+        == 2
+    )
+
+
+def test_daily_brief_latest_service_route_returns_brief(
+    client: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.routers.automations.settings",
+        SimpleNamespace(
+            n8n_service_secret="service-secret",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.app.routers.automations."
+        "get_latest_executive_brief",
+        lambda: {
+            "status": "success",
+            "generated_at": "2026-09-06T08:00:00",
+            "brief": build_daily_brief_item(),
+        },
+    )
+
+    response = client.get(
+        "/api/automations/daily-executive-brief/latest",
+        headers={
+            "X-N8N-Service-Secret": "service-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["brief"]["brief_id"] == 401
+
+
+def test_prepare_daily_executive_brief_is_idempotent_in_test_database(
+    test_engine: Any,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.services.automation_service.settings",
+        SimpleNamespace(
+            automation_enabled=True,
+        ),
+    )
+
+    cleanup_query = text(
+        """
+        DELETE FROM automation_logs
+        WHERE
+            workflow_name = 'Daily Executive Brief'
+            AND action_type = 'daily_executive_brief'
+            AND request_metadata ->> 'source' = 'n8n_schedule';
+        """
+    )
+
+    with test_engine.begin() as connection:
+        connection.execute(cleanup_query)
+
+    try:
+        first = prepare_daily_executive_brief_delivery()
+        second = prepare_daily_executive_brief_delivery()
+
+        assert first["outcome"] == "success"
+        assert first["response"]["duplicate"] is False
+        assert second["outcome"] == "duplicate"
+        assert second["response"]["duplicate"] is True
+
+        with test_engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT
+                            action_type,
+                            execution_status,
+                            request_metadata
+                        FROM automation_logs
+                        WHERE
+                            workflow_name = 'Daily Executive Brief'
+                            AND action_type = 'daily_executive_brief'
+                            AND request_metadata ->> 'source'
+                                = 'n8n_schedule';
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            )
+
+        assert len(rows) == 1
+        assert rows[0]["execution_status"] == "Pending"
+        assert rows[0]["request_metadata"]["payload_version"] == "v1"
+
+    finally:
+        with test_engine.begin() as connection:
+            connection.execute(cleanup_query)
 
 
 def test_n8n_client_rejects_embedded_credentials(

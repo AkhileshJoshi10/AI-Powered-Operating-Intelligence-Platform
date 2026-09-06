@@ -832,6 +832,66 @@ def trigger_overdue_escalation(
     )
 
 
+def prepare_daily_executive_brief_delivery(
+) -> dict[str, Any]:
+    """
+    Register today's scheduled Executive Brief delivery idempotently.
+
+    n8n is the scheduler for this workflow, so FastAPI prepares the
+    automation log but does not call an n8n webhook here.
+    """
+
+    if not settings.automation_enabled:
+        return {
+            "outcome": "disabled",
+        }
+
+    idempotency_key = _make_idempotency_key(
+        "daily-executive-brief",
+        date.today().isoformat(),
+    )
+
+    log_row, duplicate = _insert_pending_log(
+        task_id=None,
+        issue_id=None,
+        workflow_name="Daily Executive Brief",
+        action_type="daily_executive_brief",
+        idempotency_key=idempotency_key,
+        request_metadata={
+            "source": "n8n_schedule",
+            "payload_version": "v1",
+            "schedule_date": date.today().isoformat(),
+        },
+    )
+
+    if duplicate:
+        return {
+            "outcome": "duplicate",
+            "response": {
+                "status": "success",
+                "message": (
+                    "Today's Executive Brief delivery has already "
+                    "been prepared; no duplicate delivery should run."
+                ),
+                "duplicate": True,
+                "automation_log": log_row,
+            },
+        }
+
+    return {
+        "outcome": "success",
+        "response": {
+            "status": "success",
+            "message": (
+                "Today's Executive Brief delivery was prepared "
+                "successfully."
+            ),
+            "duplicate": False,
+            "automation_log": log_row,
+        },
+    }
+
+
 def record_n8n_callback(
     *,
     idempotency_key: str,

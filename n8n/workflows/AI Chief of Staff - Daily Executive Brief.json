@@ -1,0 +1,580 @@
+{
+  "name": "AI Chief of Staff - Daily Executive Brief",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1664,
+        224
+      ],
+      "id": "...",
+      "name": "Daily 08:00 Schedule"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/daily-executive-brief/prepare",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1440,
+        224
+      ],
+      "id": "...",
+      "name": "Prepare Daily Brief Delivery",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - n8n Service Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "if ($json.duplicate === true) {\n  return [];\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        208
+      ],
+      "id": "...",
+      "name": "Continue Only If New"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/daily-executive-brief/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -992,
+        208
+      ],
+      "id": "...",
+      "name": "Generate Executive Brief",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - n8n Service Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://127.0.0.1:8000/api/automations/daily-executive-brief/latest",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -784,
+        112
+      ],
+      "id": "...",
+      "name": "Get Latest Executive Brief",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - n8n Service Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_RECIPIENT_EMAIL",
+        "subject": "={{ '[DAILY EXECUTIVE BRIEF] SmartMart - ' + ($json.brief?.brief_date || 'Current') }}",
+        "emailFormat": "text",
+        "text": "={{\n(() => {\n    const b = $json.brief || {};\n    const d = b.brief_data || {};\n    const issues = d.issue_snapshot || {};\n    const recs = d.recommendation_snapshot || {};\n    const tasks = d.task_snapshot || {};\n    const autos = d.automation_snapshot || {};\n    const attention = Array.isArray(d.management_attention)\n        ? d.management_attention\n        : [];\n\n    return (\n        'AI CHIEF OF STAFF — DAILY EXECUTIVE BRIEF\\n\\n'\n        + 'Date: ' + (b.brief_date || 'N/A') + '\\n\\n'\n\n        + 'EXECUTIVE SUMMARY\\n'\n        + (b.summary_text || 'No summary available.')\n        + '\\n\\n'\n\n        + 'MANAGEMENT ATTENTION\\n'\n        + (\n            attention.length\n                ? attention.map(x => '- ' + x).join('\\n')\n                : '- No immediate management action.'\n        )\n        + '\\n\\n'\n\n        + 'BUSINESS WORKFLOW SNAPSHOT\\n'\n        + 'Open issues: '\n        + (issues.open_issue_count ?? 0)\n        + '\\n'\n\n        + 'High-priority open issues: '\n        + (issues.high_priority_open_issue_count ?? 0)\n        + '\\n'\n\n        + 'Recommendations needing review: '\n        + (recs.recommendations_needing_review ?? 0)\n        + '\\n'\n\n        + 'Active tasks: '\n        + (tasks.active_task_count ?? 0)\n        + '\\n'\n\n        + 'Blocked tasks: '\n        + (tasks.blocked_task_count ?? 0)\n        + '\\n'\n\n        + 'Overdue tasks: '\n        + (tasks.overdue_task_count ?? 0)\n        + '\\n\\n'\n\n        + 'AUTOMATION SNAPSHOT\\n'\n        + 'Successful today: '\n        + (autos.successful_workflow_count ?? 0)\n        + '\\n'\n\n        + 'Failed today: '\n        + (autos.failed_workflow_count ?? 0)\n        + '\\n'\n\n        + 'In progress today: '\n        + (autos.in_progress_workflow_count ?? 0)\n        + '\\n'\n\n        + 'Last brief delivery status: '\n        + (\n            autos.last_executive_brief_delivery_status\n            || 'No previous delivery recorded'\n        )\n        + '\\n\\n'\n\n        + 'Generated by the AI-Powered Operating Intelligence Platform.'\n    );\n})()\n}}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -432,
+        96
+      ],
+      "id": "...",
+      "name": "Send Executive Brief Email",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "webhookId": "...",
+      "credentials": {
+        "smtp": {
+          "id": "...",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Prepare Daily Brief Delivery').item.json.automation_log.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Succeeded"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Daily Executive Brief generated and delivered successfully."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        48,
+        80
+      ],
+      "id": "...",
+      "name": "Record Brief Success",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Prepare Daily Brief Delivery').item.json.automation_log.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Failed"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Daily Executive Brief was generated but email delivery failed."
+            },
+            {
+              "name": "error_type",
+              "value": "ExecutiveBriefEmailDeliveryError"
+            },
+            {
+              "name": "error_message",
+              "value": "={{ $json.error?.message || $json.error || 'Executive Brief email delivery failed.' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        160
+      ],
+      "id": "...",
+      "name": "Record Brief Email Failure",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_RECIPIENT_EMAIL",
+        "subject": "[ALERT] Daily Executive Brief generation failed",
+        "emailFormat": "text",
+        "text": "={{ 'The scheduled Daily Executive Brief could not be generated.\\n\\n' + 'n8n execution ID: ' + $execution.id + '\\n' + 'Error: ' + ($json.error?.message || $json.error || 'Unknown generation error') + '\\n\\nPlease review the AI Chief of Staff service and automation logs.' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -784,
+        320
+      ],
+      "id": "...",
+      "name": "Send Generation Failure Alert",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "webhookId": "...",
+      "credentials": {
+        "smtp": {
+          "id": "...",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Prepare Daily Brief Delivery').item.json.automation_log.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Failed"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Daily Executive Brief generation failed; fallback notification was attempted."
+            },
+            {
+              "name": "error_type",
+              "value": "ExecutiveBriefGenerationError"
+            },
+            {
+              "name": "error_message",
+              "value": "={{ $('Generate Executive Brief').item.json.error?.message || $('Generate Executive Brief').item.json.error || 'Executive Brief generation failed.' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -368,
+        320
+      ],
+      "id": "...",
+      "name": "Record Brief Generation Failure",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "REPLACE_WITH_SENDER_EMAIL",
+        "toEmail": "REPLACE_WITH_RECIPIENT_EMAIL",
+        "subject": "[ALERT] Daily Executive Brief retrieval failed",
+        "emailFormat": "text",
+        "text": "={{\n'The scheduled Daily Executive Brief was generated but could not be retrieved for delivery.\\n\\n'\n+ 'n8n execution ID: ' + $execution.id + '\\n'\n+ 'Error: '\n+ (\n    $json.error?.message\n    || (typeof $json.error === 'string' ? $json.error : '')\n    || 'Unknown retrieval error'\n)\n+ '\\n\\nPlease review the AI Chief of Staff service and automation logs.'\n}}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -544,
+        496
+      ],
+      "id": "...",
+      "name": "Send Retrieval Failure Alert",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "webhookId": "...",
+      "credentials": {
+        "smtp": {
+          "id": "...",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/automations/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "idempotency_key",
+              "value": "={{ $('Prepare Daily Brief Delivery').item.json.automation_log.idempotency_key }}"
+            },
+            {
+              "name": "execution_status",
+              "value": "Failed"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "message",
+              "value": "Daily Executive Brief retrieval failed; fallback notification was attempted."
+            },
+            {
+              "name": "error_type",
+              "value": "ExecutiveBriefRetrievalError"
+            },
+            {
+              "name": "error_message",
+              "value": "={{ $('Get Latest Executive Brief').item.json.error?.message || $('Get Latest Executive Brief').item.json.error || 'Executive Brief retrieval failed.' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        496
+      ],
+      "id": "...",
+      "name": "Record Brief Retrieval Failure",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "...",
+          "name": "AI Chief of Staff - Callback Auth"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily 08:00 Schedule": {
+      "main": [
+        [
+          {
+            "node": "Prepare Daily Brief Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Daily Brief Delivery": {
+      "main": [
+        [
+          {
+            "node": "Continue Only If New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Only If New": {
+      "main": [
+        [
+          {
+            "node": "Generate Executive Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Executive Brief": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Executive Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Generation Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Executive Brief": {
+      "main": [
+        [
+          {
+            "node": "Send Executive Brief Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Retrieval Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Executive Brief Email": {
+      "main": [
+        [
+          {
+            "node": "Record Brief Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Brief Email Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Generation Failure Alert": {
+      "main": [
+        [
+          {
+            "node": "Record Brief Generation Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Brief Generation Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Retrieval Failure Alert": {
+      "main": [
+        [
+          {
+            "node": "Record Brief Retrieval Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Brief Retrieval Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Kolkata",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": -1
+  },
+  "versionId": "...",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "..."
+  },
+  "id": "...",
+  "tags": []
+}

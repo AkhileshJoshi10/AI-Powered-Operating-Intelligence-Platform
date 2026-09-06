@@ -5,6 +5,8 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+from backend.app.services import executive_brief_service
+
 
 GENERATED_AT = "2026-08-03T13:00:00"
 
@@ -19,7 +21,7 @@ SAMPLE_BRIEF = {
         "recommendations are awaiting management review."
     ),
     "brief_data": {
-        "brief_version": 1,
+        "brief_version": 2,
         "generated_at": GENERATED_AT,
         "kpi_snapshot": {
             "total_kpis": 3,
@@ -98,6 +100,25 @@ SAMPLE_BRIEF = {
             "overdue_tasks": [],
             "priority_tasks": [],
         },
+        "automation_snapshot": {
+            "count_window": "today",
+            "total_workflow_count": 3,
+            "successful_workflow_count": 2,
+            "failed_workflow_count": 1,
+            "skipped_workflow_count": 0,
+            "in_progress_workflow_count": 0,
+            "recent_workflow_executions": [],
+            "recent_alerts": [],
+            "recent_reminders": [],
+            "recent_escalations": [],
+            "last_executive_brief_delivery_status": "Succeeded",
+            "last_executive_brief_delivery": {
+                "automation_log_id": 401,
+                "workflow_name": "Daily Executive Brief",
+                "action_type": "daily_executive_brief",
+                "execution_status": "Succeeded",
+            },
+        },
         "management_attention": [
             "Review 4 high-priority open business issues.",
             "Complete management review for 3 recommendations.",
@@ -167,7 +188,7 @@ def test_latest_executive_brief_returns_stored_brief(
     assert brief["brief_type"] == "Daily Executive Brief"
     assert brief["status"] == "Draft"
 
-    assert brief_data["brief_version"] == 1
+    assert brief_data["brief_version"] == 2
     assert brief_data["kpi_snapshot"]["total_kpis"] == 3
 
     assert (
@@ -187,6 +208,20 @@ def test_latest_executive_brief_returns_stored_brief(
     assert (
         brief_data["task_snapshot"]["blocked_task_count"]
         == 1
+    )
+
+    assert (
+        brief_data["automation_snapshot"][
+            "successful_workflow_count"
+        ]
+        == 2
+    )
+
+    assert (
+        brief_data["automation_snapshot"][
+            "last_executive_brief_delivery_status"
+        ]
+        == "Succeeded"
     )
 
     assert len(
@@ -421,3 +456,89 @@ def test_generate_executive_brief_returns_500_on_processing_failure(
             "from the current business data."
         )
     }
+
+
+def test_build_executive_brief_data_includes_automation_snapshot(
+    monkeypatch: Any,
+) -> None:
+    """The deterministic brief must include Day 38 automation activity."""
+
+    monkeypatch.setattr(
+        executive_brief_service,
+        "get_kpi_response",
+        lambda: {
+            "total_kpis": 0,
+            "kpis": [],
+            "latest_store_target_achievement": [],
+        },
+    )
+    monkeypatch.setattr(
+        executive_brief_service,
+        "build_issue_snapshot",
+        lambda: {
+            "open_issue_count": 2,
+            "high_priority_open_issue_count": 1,
+            "in_progress_issue_count": 0,
+            "top_open_issues": [],
+        },
+    )
+    monkeypatch.setattr(
+        executive_brief_service,
+        "build_recommendation_snapshot",
+        lambda: {
+            "total_recommendations": 1,
+            "recommendations_needing_review": 1,
+            "status_counts": {},
+            "top_recommendations": [],
+        },
+    )
+    monkeypatch.setattr(
+        executive_brief_service,
+        "build_task_snapshot",
+        lambda: {
+            "total_tasks": 1,
+            "active_task_count": 1,
+            "blocked_task_count": 0,
+            "overdue_task_count": 0,
+            "status_counts": {},
+            "overdue_tasks": [],
+            "priority_tasks": [],
+        },
+    )
+
+    automation_snapshot = {
+        "count_window": "today",
+        "total_workflow_count": 3,
+        "successful_workflow_count": 2,
+        "failed_workflow_count": 1,
+        "skipped_workflow_count": 0,
+        "in_progress_workflow_count": 0,
+        "recent_workflow_executions": [],
+        "recent_alerts": [],
+        "recent_reminders": [],
+        "recent_escalations": [],
+        "last_executive_brief_delivery_status": "Succeeded",
+        "last_executive_brief_delivery": None,
+    }
+
+    monkeypatch.setattr(
+        executive_brief_service,
+        "build_automation_snapshot",
+        lambda: automation_snapshot,
+    )
+
+    summary_text, brief_data = (
+        executive_brief_service.build_executive_brief_data()
+    )
+
+    assert brief_data["brief_version"] == 2
+    assert brief_data["automation_snapshot"] == automation_snapshot
+    assert (
+        "Today's automation activity includes "
+        "2 successful and 1 failed workflow executions."
+        in summary_text
+    )
+    assert (
+        "Review 1 failed automation executions recorded today."
+        in brief_data["management_attention"]
+    )

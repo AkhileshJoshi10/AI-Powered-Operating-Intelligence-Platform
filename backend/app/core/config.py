@@ -317,6 +317,10 @@ class Settings:
         "N8N_CALLBACK_SECRET",
         "",
     ).strip()
+    n8n_service_secret: str = os.getenv(
+        "N8N_SERVICE_SECRET",
+        "",
+    ).strip()
     n8n_timeout_seconds: float = read_float(
         "N8N_TIMEOUT_SECONDS",
         10.0,

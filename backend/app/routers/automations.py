@@ -15,6 +15,10 @@ from fastapi import (
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.core.config import settings
+from backend.app.schemas.executive_briefs import (
+    GenerateExecutiveBriefResponse,
+    LatestExecutiveBriefResponse,
+)
 from backend.app.schemas.automations import (
     AutomationCallbackRequest,
     AutomationCallbackResponse,
@@ -24,9 +28,14 @@ from backend.app.schemas.automations import (
     IssueAutomationTriggerRequest,
     TaskAutomationTriggerRequest,
 )
+from backend.app.services.executive_brief_service import (
+    generate_daily_executive_brief,
+    get_latest_executive_brief,
+)
 from backend.app.services.automation_service import (
     get_automation_log_detail,
     get_automation_log_list,
+    prepare_daily_executive_brief_delivery,
     record_n8n_callback,
     trigger_high_priority_alert,
     trigger_overdue_escalation,
@@ -42,6 +51,7 @@ router = APIRouter(
 
 CALLBACK_SECRET_HEADER = "X-N8N-Callback-Secret"
 AUTOMATION_API_SECRET_HEADER = "X-Automation-API-Secret"
+N8N_SERVICE_SECRET_HEADER = "X-N8N-Service-Secret"
 
 
 def require_n8n_callback_secret(
@@ -111,6 +121,40 @@ def require_automation_api_secret(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid automation trigger credentials.",
         )
+
+def require_n8n_service_secret(
+    provided_secret: Annotated[
+        str | None,
+        Header(
+            alias=N8N_SERVICE_SECRET_HEADER,
+        ),
+    ] = None,
+) -> None:
+    """Authenticate scheduled n8n service calls to protected APIs."""
+
+    configured_secret = settings.n8n_service_secret
+
+    if not configured_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The n8n service authentication secret is not "
+                "configured."
+            ),
+        )
+
+    if (
+        provided_secret is None
+        or not compare_digest(
+            provided_secret,
+            configured_secret,
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid n8n service credentials.",
+        )
+
 
 def _raise_trigger_outcome(
     result: dict,
@@ -352,6 +396,147 @@ def create_automation_log_callback(
             detail=(
                 "The automation callback could not be recorded because "
                 "the database operation failed."
+            ),
+        ) from error
+
+
+@router.post(
+    "/automations/daily-executive-brief/prepare",
+    response_model=AutomationTriggerResponse,
+    summary="Prepare today's scheduled Executive Brief delivery",
+)
+def prepare_daily_executive_brief(
+    _: Annotated[
+        None,
+        Depends(
+            require_n8n_service_secret
+        ),
+    ],
+) -> AutomationTriggerResponse:
+    """Create today's idempotent automation-log anchor for n8n."""
+
+    try:
+        result = prepare_daily_executive_brief_delivery()
+
+        if result["outcome"] not in {
+            "success",
+            "duplicate",
+        }:
+            _raise_trigger_outcome(result)
+
+        return AutomationTriggerResponse(
+            **result["response"]
+        )
+
+    except HTTPException:
+        raise
+
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The scheduled Executive Brief delivery could not be "
+                "prepared because the database operation failed."
+            ),
+        ) from error
+
+
+@router.post(
+    "/automations/daily-executive-brief/generate",
+    response_model=GenerateExecutiveBriefResponse,
+    summary="Generate today's Executive Brief for the n8n service",
+)
+def generate_daily_executive_brief_for_n8n(
+    _: Annotated[
+        None,
+        Depends(
+            require_n8n_service_secret
+        ),
+    ],
+) -> GenerateExecutiveBriefResponse:
+    """Generate the deterministic brief through a protected service route."""
+
+    try:
+        response_data = generate_daily_executive_brief()
+
+        return GenerateExecutiveBriefResponse(
+            **response_data
+        )
+
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The Daily Executive Brief could not be generated "
+                "because a database operation failed."
+            ),
+        ) from error
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "The Daily Executive Brief could not be generated "
+                "from the current business data."
+            ),
+        ) from error
+
+
+@router.get(
+    "/automations/daily-executive-brief/latest",
+    response_model=LatestExecutiveBriefResponse,
+    summary="Get the latest Executive Brief for the n8n service",
+)
+def read_latest_executive_brief_for_n8n(
+    _: Annotated[
+        None,
+        Depends(
+            require_n8n_service_secret
+        ),
+    ],
+) -> LatestExecutiveBriefResponse:
+    """Return the latest stored brief through a protected service route."""
+
+    try:
+        response_data = get_latest_executive_brief()
+
+        if response_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "No Executive Brief has been generated yet."
+                ),
+            )
+
+        return LatestExecutiveBriefResponse(
+            **response_data
+        )
+
+    except HTTPException:
+        raise
+
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The latest Executive Brief could not be loaded "
+                "because the database operation failed."
+            ),
+        ) from error
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "The latest Executive Brief could not be processed."
             ),
         ) from error
 

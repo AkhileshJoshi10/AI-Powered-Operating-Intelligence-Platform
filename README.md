@@ -1,351 +1,592 @@
 # AI-Powered Operating Intelligence Platform
 
-## Project Title
+> **A Multi-Agent AI Chief of Staff for Business Monitoring, Decision Support, and Workflow Automation**
 
-**AI-Powered Operating Intelligence Platform**
-A Project On
-**Multi-Agent AI System for Business Monitoring, Decision Support, and Workflow Automation**
+An AI-powered operating intelligence platform that continuously turns fragmented business data into **prioritized issues, evidence-based root causes, actionable recommendations, manager-approved tasks, automated follow-ups, and executive intelligence**.
+
+The project is built around a fictional retail/FMCG company, **SmartMart Retail Pvt. Ltd.**, and demonstrates how deterministic analytics, multi-agent AI, retrieval-augmented generation (RAG), controlled tool use, workflow automation, and human oversight can work together in an enterprise decision-support system.
 
 ---
 
-## Project Overview
+## Table of Contents
 
-This project develops an AI-powered operating intelligence platform that acts as a digital Chief of Staff for business managers.
+- [Overview](#overview)
+- [Business Problem](#business-problem)
+- [What the Platform Does](#what-the-platform-does)
+- [Why This Project Is Different](#why-this-project-is-different)
+- [System Architecture](#system-architecture)
+- [End-to-End Workflow](#end-to-end-workflow)
+- [Implemented Capabilities](#implemented-capabilities)
+- [Multi-Agent AI Layer](#multi-agent-ai-layer)
+- [RAG and Controlled Tool Use](#rag-and-controlled-tool-use)
+- [Human-in-the-Loop Decision Workflow](#human-in-the-loop-decision-workflow)
+- [Data and Demo Environment](#data-and-demo-environment)
+- [Technology Stack](#technology-stack)
+- [Project Structure](#project-structure)
+- [Testing and Reliability](#testing-and-reliability)
+- [Security and Guardrails](#security-and-guardrails)
+- [Running Locally](#running-locally)
+- [Current Status](#current-status)
+- [Planned Next Steps](#planned-next-steps)
 
-The platform uses business data from sales, inventory, finance, customer complaints, vendors, employees, and store operations to detect important problems, prioritize them, explain likely root causes, recommend actions, support manager review, and automate follow-up workflows.
+---
 
-The demo company is **SmartMart Retail Pvt. Ltd.**, a fictional retail/FMCG superstore business.
+## Overview
+
+Traditional business dashboards are good at showing **what happened**, but managers still have to determine:
+
+- What actually requires attention?
+- Which problem is most important?
+- Why did it happen?
+- What evidence supports the conclusion?
+- What action should be taken?
+- Who should own the action?
+- Has the action been completed?
+- What needs executive attention today?
+
+This project addresses that gap by building an **AI-powered operating intelligence layer** on top of business data.
+
+Instead of stopping at dashboards and alerts, the platform is designed to move through the full decision-to-action cycle:
+
+**Monitor → Detect → Prioritize → Explain → Recommend → Approve → Assign → Automate → Track → Brief**
 
 ---
 
 ## Business Problem
 
-Modern businesses generate large volumes of data across sales systems, inventory records, finance reports, customer-support logs, vendor deliveries, spreadsheets, and dashboards.
+Businesses generate operational data across sales systems, inventory records, finance reports, customer complaints, vendor deliveries, spreadsheets, CRM systems, and other tools.
 
-Traditional dashboards can show what happened, but they often do not clearly answer:
+The problem is rarely a lack of data. The bigger problem is converting that data into **timely, trustworthy and actionable management decisions**.
 
-* Why did the problem occur?
-* Which issue should be handled first?
-* Which store, product, or vendor is affected?
-* What action should be taken?
-* Who should own the action?
-* How should follow-up work be tracked and automated?
+A manager may have multiple dashboards but still need to manually:
 
-This project addresses these gaps through a structured operating-intelligence workflow.
+1. Identify abnormal performance.
+2. Decide which issue matters most.
+3. investigate multiple data sources.
+4. determine the likely root cause.
+5. decide what action should be taken.
+6. assign responsibility.
+7. follow up with employees or teams.
+8. track whether the issue was resolved.
+9. summarize the situation for senior management.
 
----
-
-## Project Objectives
-
-The platform is designed to help managers:
-
-* Monitor business performance through KPIs and alerts.
-* Detect sales, inventory, complaint, vendor, and finance risks.
-* Rank issues as High, Medium, or Low priority.
-* Generate evidence-based root-cause explanations.
-* Recommend actions, owners, deadlines, and expected impact.
-* Allow managers to accept, edit, reject, and assign recommendations.
-* Track approved work through a Kanban board.
-* Trigger notifications, reminders, and escalations through n8n workflows.
-* Generate Daily Executive Briefs for managers and executives.
+The AI-Powered Operating Intelligence Platform brings these steps into one controlled workflow.
 
 ---
 
-## Current Development Status
+## What the Platform Does
 
-### Completed
+The platform currently supports a backend workflow that can:
 
-* Project repository, virtual environment, dependencies, and folder structure created.
-* Synthetic SmartMart Retail datasets generated for January–June 2026.
-* Raw datasets preserved in `data/raw/`.
-* Cleaned datasets generated in `data/processed/`.
-* Raw-data and processed-data validation completed successfully.
-* PostgreSQL database `ai_operating_intelligence` created and connected locally.
-* PostgreSQL business-data schema created and executed.
-* ERD, data dictionary, SQL query file, and database documentation created.
-* All nine cleaned datasets loaded successfully into PostgreSQL.
-* Table row counts, foreign-key relationships, and database constraints verified.
-* Exploratory Data Analysis completed.
-* Rule-based issue-detection engine created.
-* Priority scoring created for High, Medium, and Low business issues.
-* Evidence-based root-cause analysis engine created.
-
-### Latest Analytics Output
-
-The latest issue-detection run identified:
-
-| Priority | Number of Issues |
-| -------- | ---------------: |
-| High     |                7 |
-| Medium   |               14 |
-| Low      |               14 |
-
-A total of **21 High and Medium priority issues** were analysed through the root-cause analysis engine.
-
-Key findings include:
-
-* SmartMart Clock Tower (`S003`) has a major June sales decline.
-* SmartMart Clock Tower has high complaint volume and low-stock risks.
-* SmartMart Clock Tower has serious financial-risk indicators.
-* Vendors `V004` and `V009` show major delivery-performance risk.
-* Products such as Instant Noodles Pack, Biscuits 300g, and Chips 150g show low-stock risk in selected stores.
-
-### Current Stage
-
-**Cycle 2: Analytics and Issue Detection Engine**
-
-The project has completed the initial issue-detection and root-cause-analysis workflow. The remaining Cycle 2 work includes a dedicated KPI module, expanded analytics rules, reusable analytics utilities, and storing detected issues/evidence in PostgreSQL.
+- Ingest and validate business data.
+- Store operational data in PostgreSQL.
+- Calculate business KPIs.
+- Detect sales, inventory, complaint, vendor and finance risks.
+- Consolidate detected issues.
+- Prioritize issues based on business impact.
+- Generate evidence-based root-cause analysis.
+- Enhance analysis through specialized AI agents.
+- Generate recommended management actions.
+- Allow human review before actions are operationalized.
+- Convert accepted recommendations into tasks.
+- Track task and automation activity.
+- Trigger alerts, reminders and escalations through n8n.
+- Retrieve relevant organizational knowledge using RAG.
+- Use controlled read-only business tools through an MCP-style tool layer.
+- Generate Daily Executive Briefs.
+- Maintain audit, automation and agent-run metadata.
+- Support authenticated application users through an authentication foundation.
 
 ---
 
-## Current Data Flow
+## Why This Project Is Different
 
-```text
-Raw CSV Data
-    ↓
-Raw Data Validation
-    ↓
-Data Cleaning
-    ↓
-Processed Data Validation
-    ↓
-PostgreSQL Database
-    ↓
-Rule-Based Issue Detection
-    ↓
-Priority Scoring
-    ↓
-Evidence-Based Root-Cause Analysis
-    ↓
-Manager-Ready Reports
+### 1. It goes beyond dashboards
+
+The platform does not only visualize KPIs. It connects monitoring with diagnosis, recommendation, task creation and workflow automation.
+
+### 2. Deterministic analytics remain the factual foundation
+
+Business calculations, thresholds, evidence and priority signals are produced through deterministic analytics.
+
+LLMs enhance interpretation and communication rather than replacing the underlying business logic.
+
+### 3. Evidence-first AI
+
+Agents work with structured evidence, retrieved knowledge and controlled tool outputs instead of being given unrestricted access to operational systems.
+
+### 4. Human-in-the-loop control
+
+Recommendations do not automatically become business actions.
+
+Managers can review decisions before approved recommendations are converted into executable tasks.
+
+### 5. Decision-to-action workflow
+
+The system connects intelligence with execution:
+
+**Issue → Evidence → Recommendation → Approval → Task → Automation → Follow-up**
+
+### 6. Controlled enterprise tool access
+
+Read-only SQL, spreadsheet and CRM-style tools are exposed through controlled interfaces so agents can retrieve useful information without unrestricted database writes.
+
+### 7. Auditable AI operations
+
+Agent executions, tool calls, recommendations, tasks, imports, automations and important system activity are designed to be traceable.
+
+---
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    A[Business Data Sources] --> B[Validation & Cleaning]
+    B --> C[(PostgreSQL)]
+    C --> D[Deterministic Analytics Engine]
+
+    D --> E[Issue Detection]
+    E --> F[Priority Engine]
+    F --> G[Evidence & Root-Cause Analysis]
+
+    G --> H[Multi-Agent AI Layer]
+
+    K[Knowledge / RAG] --> H
+    L[Controlled Read-Only Tools / MCP] --> H
+
+    H --> I[Recommendations]
+    I --> J[Manager Review]
+
+    J -->|Accept / Edit| M[Task Creation]
+    J -->|Reject| N[Decision Recorded]
+
+    M --> O[Task Tracking]
+    O --> P[n8n Automations]
+    P --> Q[Alerts / Reminders / Escalations]
+
+    C --> R[FastAPI Control Layer]
+    H --> R
+    O --> R
+    Q --> R
+
+    R --> S[Daily Executive Brief]
+    R --> T[React Management Dashboard - Planned]
+
+    U[Audit / Agent / Automation Logs] --- R
 ```
 
 ---
 
-## Target End-to-End System Flow
+## End-to-End Workflow
 
 ```text
 Business Data
     ↓
-Data Validation and Cleaning
+Data Validation & Cleaning
     ↓
-PostgreSQL Database
+PostgreSQL Source of Truth
     ↓
-Analytics and Issue Detection Engine
+KPI & Deterministic Analytics
     ↓
-Priority Ranking Engine
+Issue Detection
+    ↓
+Priority Ranking
+    ↓
+Evidence Collection
     ↓
 Root-Cause Analysis
     ↓
-AI Recommendation Agent
+Multi-Agent AI Enhancement
     ↓
-Manager Review and Approval
+Action Recommendations
     ↓
-Task Creation and Kanban Tracking
+Manager Accept / Edit / Reject
     ↓
-n8n Workflow Automation
+Approved Task Creation
     ↓
-Automation Logs and Daily Executive Brief
+Task Tracking
     ↓
-React Dashboard
+n8n Alerts / Reminders / Escalations
+    ↓
+Automation & Audit Logs
+    ↓
+Daily Executive Brief
+    ↓
+React Management Dashboard (Planned)
 ```
 
 ---
 
-## Demo Company
+## Implemented Capabilities
+
+### Data Engineering and Validation
+
+The project includes a complete data foundation for the SmartMart demo environment:
+
+- Raw-data preservation.
+- Data cleaning and standardization.
+- Processed-data validation.
+- Foreign-key validation.
+- Duplicate and missing-value checks.
+- Date and numeric validation.
+- Business-rule validation.
+- Database loading.
+- Import logging.
+- Reusable data-management services.
+
+Raw and processed datasets remain separated so data transformations can be traced.
+
+---
+
+### PostgreSQL Data Layer
+
+PostgreSQL is the primary source of truth for both business data and platform workflow data.
+
+Business domains include:
+
+- Products
+- Stores
+- Vendors
+- Employees
+- Sales
+- Inventory
+- Customer complaints
+- Finance
+- Vendor deliveries
+
+The platform also maintains workflow/system information for areas such as:
+
+- Detected issues
+- Issue evidence
+- Recommendations
+- Tasks
+- Executive briefs
+- Agent runs
+- Automation logs
+- Audit logs
+- Data import logs
+- Application-user authentication
+
+---
+
+### Deterministic Analytics Engine
+
+The deterministic analytics layer provides the factual foundation used by the agents.
+
+Implemented analytics cover:
+
+- KPI calculation
+- Sales performance
+- Store underperformance
+- Inventory risk
+- Low-stock detection
+- Overstock detection
+- Customer complaint analysis
+- Vendor performance
+- Delivery delays
+- Finance risk
+- Priority scoring
+- Executive priority selection
+- Evidence-based root-cause analysis
+- Manager priority lists
+
+The separation between deterministic analysis and generative AI reduces the risk of allowing an LLM to invent critical business calculations.
+
+---
+
+### FastAPI Backend
+
+FastAPI provides the application/control layer around analytics, data management, executive intelligence and knowledge services.
+
+The backend architecture includes:
+
+- API routers
+- Pydantic schemas
+- Service layer
+- Database models
+- Analytics services
+- AI agents
+- LLM provider abstraction
+- Knowledge/RAG services
+- Authentication and security utilities
+- Task and automation services
+- Audit and run metadata
+
+This separates business logic from transport/API concerns and makes the project easier to test and extend.
+
+---
+
+## Multi-Agent AI Layer
+
+The platform uses specialized agents rather than relying on one unrestricted general-purpose prompt.
+
+### Monitoring Agent
+
+Interprets monitoring signals and business anomalies generated by the analytics layer.
+
+### Priority Agent
+
+Helps explain and communicate which issues deserve management attention first.
+
+### Root Cause Agent
+
+Enhances deterministic root-cause findings using the available evidence and controlled context.
+
+### Recommendation Agent
+
+Generates actionable management recommendations from validated issues and evidence.
+
+### Executive Brief Agent
+
+Transforms operational intelligence into concise management-level summaries.
+
+---
+
+### LLM Integration
+
+The AI layer includes infrastructure for:
+
+- LLM provider abstraction
+- Provider/model metadata
+- Prompt management and versioning
+- Token usage tracking
+- Estimated cost tracking
+- Latency tracking
+- Tool-call metadata
+- Fallback handling
+- Error classification
+- Agent-run logging
+
+A live controlled-tool validation has also been performed using a Groq-backed LLM workflow.
+
+---
+
+## RAG and Controlled Tool Use
+
+### Knowledge / RAG
+
+The platform contains a knowledge layer for grounding AI responses in organizational documents and supporting information.
+
+The knowledge workflow supports:
+
+- Document ingestion
+- Validation
+- Knowledge retrieval
+- Read-only contextual use
+- Grounded agent responses
+
+RAG complements structured PostgreSQL evidence by giving agents access to relevant unstructured organizational knowledge.
+
+---
+
+### Controlled Tools / MCP
+
+The platform implements controlled read-only tools for external business information.
+
+Current controlled tool categories include:
+
+- SQL read
+- Excel/spreadsheet read
+- CRM-style read
+
+The tool layer is designed around an important principle:
+
+> **Agents may retrieve the information they need, but they should not receive unrestricted authority to modify operational systems.**
+
+This creates a safer foundation for enterprise AI tool use.
+
+---
+
+## Human-in-the-Loop Decision Workflow
+
+AI recommendations are not treated as automatically approved decisions.
+
+The platform supports a manager-controlled workflow:
+
+```text
+Recommendation
+      ↓
+Manager Review
+      ↓
+┌─────────────┬─────────────┬─────────────┐
+│   Accept    │    Edit     │   Reject    │
+└─────────────┴─────────────┴─────────────┘
+      ↓              ↓
+Approved Recommendation
+      ↓
+Task Creation
+      ↓
+Task Tracking
+      ↓
+Automation
+```
+
+This design keeps accountability with the human decision-maker while still allowing AI to reduce analysis and coordination effort.
+
+---
+
+## Task and Workflow Automation
+
+Approved recommendations can be transformed into operational tasks.
+
+Task workflows support management of work such as:
+
+- Ownership
+- Status
+- Due dates
+- Follow-up
+- Completion
+- Overdue identification
+- Automation triggers
+
+n8n is used as the workflow-automation layer.
+
+Example automation workflows include:
+
+- High-priority issue alerts
+- Task reminders
+- Overdue-task escalations
+
+Automation activity is recorded so system-triggered actions remain traceable.
+
+---
+
+## Daily Executive Brief
+
+The platform can generate management-oriented executive briefs that consolidate information from multiple operating layers.
+
+A brief can include:
+
+- KPI snapshot
+- Highest-priority issues
+- Root causes and supporting evidence
+- Recommended actions
+- Pending management decisions
+- Task progress
+- Blocked or overdue work
+- Automation activity
+- Key management attention points
+
+The objective is to give a manager a compact operating view rather than requiring them to inspect multiple dashboards and reports independently.
+
+---
+
+## Authentication and Security Foundation
+
+The backend includes an application authentication foundation with:
+
+- Application-user model
+- Authentication schemas
+- Password security utilities
+- Credential-validation service
+- Database support
+- Administrative user-creation tooling
+- Automated authentication tests
+
+This provides the groundwork for protected application access and future role-based authorization.
+
+---
+
+## Data and Demo Environment
+
+### Demo Company
 
 **SmartMart Retail Pvt. Ltd.**
 
-SmartMart is a fictional retail/FMCG superstore company with multiple stores, vendors, employees, products, sales transactions, inventory records, customer complaints, finance records, and vendor-delivery data.
+SmartMart is a fictional retail/FMCG superstore business created specifically for this project.
 
----
-
-## Datasets
-
-The project currently uses nine validated datasets.
-
-| Dataset                      | Purpose                                                                                        |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `products_data.csv`          | Product details, prices, costs, reorder levels, shelf life, perishability, and vendor linkage. |
-| `stores_data.csv`            | Store location, manager, sales target, and operational details.                                |
-| `vendors_data.csv`           | Vendor details, supply status, rating, payment terms, and delivery information.                |
-| `employees_data.csv`         | Employee roles, departments, store assignment, and performance details.                        |
-| `sales_data.csv`             | Product-level sales transactions across SmartMart stores.                                      |
-| `inventory_data.csv`         | Store-wise stock levels, reorder status, expiry dates, and inventory risks.                    |
-| `complaints_data.csv`        | Customer complaints, severity, assignment, status, and resolution details.                     |
-| `finance_data.csv`           | Monthly revenue, cost, gross profit, operating expense, operating profit, and financial risk.  |
-| `vendor_deliveries_data.csv` | Purchase orders, delivery delays, partial deliveries, and vendor quality ratings.              |
+The synthetic environment represents multiple stores, vendors, employees, products, sales transactions, inventory records, customer complaints, finance records and vendor deliveries.
 
 ### Data Period
 
-```text
-01-01-2026 to 30-06-2026
-```
+**January 1, 2026 – June 30, 2026**
+
+### Dataset Scale
+
+The project integrates **9 relational datasets containing 46,000+ records**.
+
+| Dataset | Records | Purpose |
+|---|---:|---|
+| Products | 25 | Product, pricing, cost, reorder and vendor information |
+| Stores | 10 | Store, location, management and target information |
+| Vendors | 10 | Supplier, rating, payment and delivery information |
+| Employees | 25 | Employee, department, role and store assignments |
+| Sales | 44,435 | Product-level retail transactions |
+| Inventory | 250 | Store-product stock and inventory-risk information |
+| Complaints | 1,572 | Customer complaints, severity, assignment and resolution |
+| Finance | 60 | Store-level monthly revenue, cost, profit and financial-risk data |
+| Vendor Deliveries | 85 | Purchase-order, delay, delivery and vendor-quality information |
+
+**Total records: 46,472**
 
 ---
 
-## Key Business Scenarios Included
+## Example Business Scenarios
 
-The synthetic data intentionally includes realistic business scenarios for testing:
+The synthetic data intentionally contains business problems so the intelligence workflow can be tested against realistic situations.
 
-* Store `S003` has a significant sales decline in June 2026.
-* Store `S003` has high complaint volume.
-* Store `S003` has financial-risk indicators and low target achievement.
-* Selected products at Store `S003` and Store `S005` have low-stock risk.
-* Store `S007` contains selected overstocked grocery products.
-* Vendor `V004` and Vendor `V009` show recurring delivery delays.
-* Vendor `V009` has lower quality ratings in selected delivery records.
-* Financial risk is calculated using operating profit, revenue, and target-achievement percentage.
+Examples include:
 
----
+- Significant sales decline at a store.
+- Low-stock risks affecting selected products.
+- Overstock situations.
+- High complaint volume.
+- Financial-risk indicators.
+- Vendor delivery delays.
+- Reduced vendor quality performance.
+- Target-achievement issues.
 
-## Data Validation and Cleaning
-
-### Raw Data Validation
-
-Raw data is validated using:
-
-```text
-backend/data_validation.py
-```
-
-Validation includes:
-
-* Required-column checks
-* Missing-value checks
-* Duplicate-ID checks
-* Foreign-key validation
-* Numeric and negative-value checks
-* Date-format validation
-* Inventory stock-status validation
-* Reorder-rule validation
-* Expiry-date validation
-* Finance-formula validation
-* Vendor delivery-date validation
-* Vendor delay-day validation
-
-### Data Cleaning
-
-Data cleaning is performed using:
-
-```text
-backend/data_cleaning.py
-```
-
-The cleaning process:
-
-* Preserves raw data without overwriting it.
-* Removes unnecessary spaces.
-* Standardizes IDs and text values.
-* Converts dates to ISO format.
-* Converts numeric fields to correct data types.
-* Removes exact duplicate records.
-* Generates cleaned CSV files in `data/processed/`.
-
-### Processed Data Validation
-
-Processed datasets are validated using:
-
-```text
-backend/processed_data_validation.py
-```
-
-Latest validation result:
-
-```text
-No validation errors found.
-No warnings found.
-```
+These scenarios allow the system to demonstrate not just reporting, but issue prioritization, root-cause reasoning and management action generation.
 
 ---
 
-## PostgreSQL Database
+## Technology Stack
 
-**Database Name:** `ai_operating_intelligence`
+### Backend and Data
 
-The database currently contains these business-data tables:
+- Python
+- FastAPI
+- Pydantic
+- SQLAlchemy
+- PostgreSQL
+- Pandas
+- NumPy
 
-```text
-vendors
-employees
-stores
-products
-sales
-inventory
-complaints
-finance
-vendor_deliveries
-data_import_logs
-```
+### AI and Intelligence
 
-Database-related files:
+- Multi-agent AI architecture
+- LLM provider abstraction
+- Groq integration
+- Retrieval-Augmented Generation (RAG)
+- Controlled MCP-style tool layer
+- Prompt/version metadata
+- Agent-run observability
 
-```text
-database/schema.sql
-database/erd.md
-database/erd.dbml
-database/erd.png
-database/data_dictionary.md
-database/sample_queries.sql
-```
+### Automation
 
-All nine cleaned datasets have been loaded successfully into PostgreSQL.
+- n8n
+- Task workflows
+- Alerts
+- Reminders
+- Escalations
 
----
+### Testing
 
-## Analytics and Issue Detection
+- Pytest
+- FastAPI TestClient
+- Separate test database safety controls
 
-The current analytics engine is available in:
+### Development
 
-```text
-backend/analytics/
-```
+- Git
+- GitHub
+- Visual Studio Code
 
-### Issue Detection
+### Frontend Direction
 
-```text
-backend/analytics/issue_detection.py
-```
-
-The engine currently detects:
-
-* Financial-risk stores
-* Major store sales decline
-* Inventory stock risk
-* Customer complaint hotspots
-* Vendor delivery-performance risk
-
-It generates:
-
-```text
-reports/detected_issues.csv
-reports/detected_issues_report.md
-```
-
-### Root-Cause Analysis
-
-```text
-backend/analytics/root_cause_analysis.py
-```
-
-The root-cause engine analyses High and Medium priority issues using PostgreSQL evidence such as:
-
-* Store sales performance
-* Sales decline percentage
-* Category-level sales trends
-* Inventory availability
-* Complaint severity and unresolved complaints
-* Vendor delays and quality ratings
-* Target achievement
-* Operating profit
-* Financial-risk status
-
-It generates:
-
-```text
-reports/root_cause_analysis.csv
-reports/root_cause_analysis_report.md
-```
+- React
+- API-driven management dashboard
+- Kanban-style task interface
 
 ---
 
@@ -355,15 +596,20 @@ reports/root_cause_analysis_report.md
 AI-Powered-Operating-Intelligence-Platform/
 │
 ├── backend/
-│   ├── analytics/
-│   │   ├── __init__.py
-│   │   ├── issue_detection.py
-│   │   └── root_cause_analysis.py
+│   ├── analytics/              # Deterministic business analytics
+│   ├── app/
+│   │   ├── agents/             # Specialized AI agents
+│   │   ├── core/               # Core configuration and security
+│   │   ├── llm/                # LLM providers, prompts and metadata
+│   │   ├── models/             # Database models
+│   │   ├── routers/            # FastAPI routes
+│   │   ├── schemas/            # Request/response schemas
+│   │   └── services/           # Application services
+│   │
 │   ├── data_cleaning.py
 │   ├── data_validation.py
-│   ├── load_processed_data.py
 │   ├── processed_data_validation.py
-│   └── test_database_connection.py
+│   └── load_processed_data.py
 │
 ├── data/
 │   ├── raw/
@@ -372,32 +618,22 @@ AI-Powered-Operating-Intelligence-Platform/
 │
 ├── database/
 │   ├── schema.sql
+│   ├── system_tables.sql
+│   ├── auth_foundation.sql
 │   ├── erd.md
 │   ├── erd.dbml
 │   ├── erd.png
 │   ├── data_dictionary.md
 │   └── sample_queries.sql
 │
-├── docs/
-│   ├── architecture.md
-│   ├── dataset_plan.md
-│   ├── demo_company.md
-│   ├── mvp_scope.md
-│   ├── objectives.md
-│   └── problem_statement.md
+├── docs/                       # Project and architecture documentation
+├── n8n/
+│   └── workflows/              # Workflow automation definitions
+├── notebooks/                  # Exploration and analysis notebooks
+├── reports/                    # Generated analysis/validation reports
+├── scripts/                    # Utility and validation scripts
+├── tests/                      # Automated test suite
 │
-├── notebooks/
-│   └── data_exploration.ipynb
-│
-├── reports/
-│   ├── data_validation_report.txt
-│   ├── data_cleaning_report.txt
-│   ├── processed_data_validation_report.txt
-│   ├── eda_insights.md
-│   ├── detected_issues_report.md
-│   └── root_cause_analysis_report.md
-│
-├── n8n_workflows/
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -406,157 +642,194 @@ AI-Powered-Operating-Intelligence-Platform/
 
 ---
 
-## Technology Stack
+## Testing and Reliability
 
-### Current Technologies
+Automated testing is used across the platform rather than validating only individual scripts manually.
 
-* Python
-* PostgreSQL
-* pgAdmin
-* SQLAlchemy
-* Pandas
-* NumPy
-* python-dotenv
-* Jupyter Notebook
-* Git and GitHub
-* Visual Studio Code
+The test suite covers areas including:
 
-### Planned Backend Technologies
+- Analytics
+- KPI calculations
+- Issue workflows
+- Data imports
+- Data validation
+- Agent behavior
+- LLM-enhanced workflows
+- Agent-run metadata
+- Knowledge/RAG
+- Recommendations
+- Tasks
+- Automation
+- Executive briefs
+- Authentication
 
-* FastAPI
-* Pydantic
-* Pytest
-* Uvicorn
+### Current Regression Baseline
 
-### Planned Frontend Technologies
+```text
+580 passed
+1 dependency deprecation warning
+```
 
-* React
-* Vite
-* React Router
-* Axios
-* Plotly or Recharts
-* Material UI or Tailwind CSS
-
-### Planned AI and Automation Technologies
-
-* LLM API
-* n8n
-* Vector database / RAG
-* MCP tool-use layer
+The full regression suite currently passes successfully.
 
 ---
 
-## Running the Current Workflow
+## Security and Guardrails
 
-Activate the virtual environment:
+The project incorporates several safeguards suitable for an enterprise-style AI workflow:
+
+- Secrets are stored locally through environment variables.
+- `.env` is excluded from GitHub.
+- `.env.example` provides a safe configuration template.
+- Business calculations remain deterministic.
+- AI outputs are grounded in evidence.
+- Controlled business tools are read-only.
+- Agents do not receive unrestricted database-write access.
+- Human approval is required before recommendations become operational tasks.
+- Agent runs and important workflow actions are logged.
+- Automation activity is recorded.
+- Authentication utilities protect user credentials.
+- Test-database safety controls reduce the risk of running destructive tests against the primary database.
+
+---
+
+## Running Locally
+
+### Prerequisites
+
+Install:
+
+- Python 3.12+
+- PostgreSQL
+- Git
+- n8n for workflow-automation testing
+
+### 1. Clone the Repository
 
 ```powershell
+git clone https://github.com/AkhileshJoshi10/AI-Powered-Operating-Intelligence-Platform.git
+cd AI-Powered-Operating-Intelligence-Platform
+```
+
+### 2. Create and Activate a Virtual Environment
+
+```powershell
+python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-Validate raw data:
+### 3. Install Dependencies
 
 ```powershell
-python backend/data_validation.py
+pip install -r requirements.txt
 ```
 
-Clean raw data:
+### 4. Configure Environment Variables
 
-```powershell
-python backend/data_cleaning.py
+Use `.env.example` as the configuration reference and create your local `.env`.
+
+Do **not** commit credentials, API keys or database passwords.
+
+### 5. Prepare PostgreSQL
+
+Create the local database:
+
+```text
+ai_operating_intelligence
 ```
 
-Validate processed data:
+Apply the relevant SQL scripts under `database/` for the business schema, system tables, authentication foundation and subsequent migrations.
+
+### 6. Start the FastAPI Backend
 
 ```powershell
-python backend/processed_data_validation.py
+uvicorn backend.app.main:app --reload --env-file .env
 ```
 
-Load processed data into PostgreSQL:
+Default local API address:
 
-```powershell
-python backend/load_processed_data.py
+```text
+http://127.0.0.1:8000
 ```
 
-Run issue detection:
+### 7. Run the Automated Tests
 
 ```powershell
-python backend/analytics/issue_detection.py
+pytest -q
 ```
 
-Run root-cause analysis:
+### 8. Start n8n When Testing Automations
 
 ```powershell
-python backend/analytics/root_cause_analysis.py
+n8n start
+```
+
+Default local n8n address:
+
+```text
+http://localhost:5678
 ```
 
 ---
 
-## Next Development Steps
+## Current Status
 
-The next planned work is to complete the remaining Cycle 2 analytics components:
+The project is in **active development**.
 
-1. Create common analytics utilities and reusable database connection logic.
-2. Create a dedicated KPI calculator.
-3. Expand sales analytics for product, category, regional, and store underperformance.
-4. Expand inventory analytics for overstock, reorder-soon, near-expiry, and expired-stock risks.
-5. Expand complaint analytics for open high-severity complaints, repeated categories, monthly growth, and unresolved complaint ageing.
-6. Expand vendor and finance analytics for partial deliveries, on-time delivery rate, low operating profit, and loss-making months.
-7. Create PostgreSQL workflow tables for issues and issue evidence.
-8. Store detected issues and evidence in PostgreSQL.
-9. Begin FastAPI backend development.
+The core backend operating-intelligence workflow is implemented across:
 
----
+- Data engineering
+- PostgreSQL
+- Deterministic analytics
+- Issue prioritization
+- Root-cause analysis
+- FastAPI
+- Multi-agent AI
+- LLM integration
+- RAG
+- Controlled tools
+- Human approval workflows
+- Task management
+- n8n automation
+- Executive briefs
+- Authentication foundation
+- Automated testing
 
-## Future Modules
-
-The full platform will later include:
-
-* KPI Calculator
-* Business Monitoring Agent
-* Root Cause Analysis Agent
-* Recommendation Agent
-* Executive Brief Agent
-* Chief of Staff Orchestrator
-* Sales Agent
-* Inventory Agent
-* Finance Agent
-* Vendor and Procurement Agent
-* Complaint and Customer Support Agent
-* Recommendation approval workflow
-* Kanban task board
-* Daily Executive Brief
-* n8n notifications, reminders, and escalations
-* React dashboard
-* FastAPI backend APIs
-* RAG and document intelligence
-* Predictive analytics modules
+The next major product layer is the user-facing management experience.
 
 ---
 
-## Security and Privacy
+## Planned Next Steps
 
-* Database credentials are stored locally in `.env`.
-* `.env` is excluded from GitHub through `.gitignore`.
-* `.env.example` provides a safe environment-variable template.
-* No passwords, API keys, or confidential data should be committed to the repository.
-* Future LLM integration will use validated and minimized business evidence rather than unrestricted database access.
+The main remaining product work includes:
+
+- Complete protected API access and role-based authorization.
+- Build the React management dashboard.
+- Build the visual Kanban task-management interface.
+- Connect dashboard views to the existing FastAPI services.
+- Surface issues, evidence, recommendations, approvals, tasks and executive briefs in one UI.
+- Complete end-to-end product integration and demo workflows.
+- Prepare deployment and production-oriented configuration.
 
 ---
 
-## MVP Completion Criteria
+## Project Vision
 
-The MVP will be considered complete when it can:
+The long-term goal is to create an **AI operating layer for managers**.
 
-* Load validated business datasets.
-* Store business data in PostgreSQL.
-* Calculate business KPIs.
-* Detect sales, inventory, complaint, vendor, and finance issues.
-* Rank issues by priority.
-* Explain root causes using structured evidence.
-* Generate actionable recommendations.
-* Allow manager approval or rejection.
-* Create and track tasks through a Kanban board.
-* Trigger automation alerts through n8n.
-* Generate a Daily Executive Brief.
-* Display all major outputs through a React frontend.
+Rather than requiring managers to continuously inspect disconnected dashboards, reports, spreadsheets and operational systems, the platform is designed to continuously answer:
+
+> **What needs my attention, why does it matter, what should we do about it, and has it been handled?**
+
+That is the role of the AI Chief of Staff in this project.
+
+---
+
+## Author
+
+**Akhilesh Joshi**  
+MBA — AI & Data Science
+
+---
+
+> This project uses synthetic business data created for educational and portfolio purposes. No real customer, employee, vendor or company operational data is included.

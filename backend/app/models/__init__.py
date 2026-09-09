@@ -13,6 +13,7 @@ from backend.app.models.business import (
 )
 from backend.app.models.system import (
     AgentRun,
+    AppUser,
     AuditLog,
     AutomationLog,
     ExecutiveBrief,
@@ -44,5 +45,6 @@ __all__ = [
     "AutomationLog",
     "ExecutiveBrief",
     "AgentRun",
+    "AppUser",
     "AuditLog",
 ]

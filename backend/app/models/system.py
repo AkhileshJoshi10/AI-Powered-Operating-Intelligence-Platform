@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -619,6 +620,72 @@ class AgentRun(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime,
+    )
+
+
+class AppUser(Base):
+    """Authenticated human user of the operating intelligence platform."""
+
+    __tablename__ = "app_users"
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('Admin', 'Manager', 'Viewer')",
+            name="app_users_role_check",
+        ),
+        CheckConstraint(
+            "email = LOWER(BTRIM(email))",
+            name="app_users_email_normalized_check",
+        ),
+        UniqueConstraint(
+            "email",
+            name="app_users_email_unique",
+        ),
+        Index(
+            "idx_app_users_role_active",
+            "role",
+            "is_active",
+        ),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    email: Mapped[str] = mapped_column(
+        String(320),
+        nullable=False,
+    )
+    full_name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+    password_hash: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("TRUE"),
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
     )
 
 
